@@ -7,7 +7,7 @@ import agente.tools as T
 
 # --- buscar_wiki: búsqueda por secciones -------------------------------------
 
-_WIKI = """# Eros Neurona
+_WIKI = """# Eros Neuronal
 
 ## Precios
 La valoración inicial cuesta $1000. Las sesiones van de $1500 a $3500.

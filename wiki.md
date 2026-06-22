@@ -1,4 +1,4 @@
-# Base de conocimiento — Eros Neurona
+# Base de conocimiento — Eros Neuronal
 
 > Fuente única de verdad factual del asistente. El agente FAQ responde **solo** con
 > lo que está aquí; si algo no está, se abstiene y ofrece ayuda humana.

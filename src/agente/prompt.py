@@ -18,11 +18,9 @@ from .config import settings
 log = logging.getLogger(__name__)
 
 NUCLEO = (
-    "Eres el asistente virtual de Eros Neurona, una clínica de psicología y "
-    "neuromodulación. Sigues las directrices del PLAYBOOK al pie de la letra. "
-    "Para CUALQUIER dato factual (precios, horarios, servicios, ubicación, "
-    "políticas) consultas la herramienta `buscar_wiki` y nunca lo inventas. "
-    "Para agendar, ver horarios o escalar a una persona usas las demás herramientas."
+    "El PLAYBOOK de abajo son tus directrices de comportamiento: síguelas al pie de "
+    "la letra (tu identidad, cómo razonas y tus líneas rojas viven ahí). Tienes "
+    "herramientas disponibles; úsalas según la descripción de cada una."
 )
 
 
