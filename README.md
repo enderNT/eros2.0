@@ -70,3 +70,9 @@ En **Coolify**:
 4. `ensamblar_contexto` / `persistir` → store de memoria larga (por user_id).
 5. `enviar` / `handoff` → Chatwoot API (enviar mensaje, atributo `bot_activo`).
 6. `app.py` → parseo real del webhook de Chatwoot + validación de firma.
+
+
+Para el caso de autismo, esta bien preguntar grado de autismo, esta bien preguntar la edad. Esta bien preguntar para estudios previos
+[COMPLETAR: agrega aquí 1–3 principios propios de cómo quieres que se sienta tu
+clínica. Ej: ". Habla de *criterio*, no de
+pasos.]

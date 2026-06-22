@@ -1,8 +1,57 @@
-"""Tests de las herramientas: ver_horarios, agendar_cita (garantía V3), escalar."""
+"""Tests de las herramientas: buscar_wiki, ver_horarios, agendar_cita (V3), escalar."""
 
 import json
 
 import agente.tools as T
+
+
+# --- buscar_wiki: búsqueda por secciones -------------------------------------
+
+_WIKI = """# Eros Neurona
+
+## Precios
+La valoración inicial cuesta $1000. Las sesiones van de $1500 a $3500.
+
+## Horarios
+Atendemos de lunes a viernes, de 8am a 5pm.
+
+## Ubicación
+Sócrates 128, Polanco, CDMX.
+"""
+
+
+def _wiki(tmp_path, monkeypatch, contenido=_WIKI):
+    p = tmp_path / "wiki.md"
+    p.write_text(contenido, encoding="utf-8")
+    monkeypatch.setattr(T.settings, "wiki_path", str(p))
+
+
+def test_buscar_wiki_encuentra_seccion(tmp_path, monkeypatch):
+    _wiki(tmp_path, monkeypatch)
+    out = json.loads(T.ejecutar_tool("buscar_wiki", {"consulta": "precio valoración"}, {}))
+    titulos = [r["seccion"] for r in out["resultados"]]
+    assert "Precios" in titulos
+    assert "$1000" in out["resultados"][0]["contenido"]
+
+
+def test_buscar_wiki_acentos_indiferente(tmp_path, monkeypatch):
+    _wiki(tmp_path, monkeypatch)
+    # "ubicacion" sin tilde debe encontrar la sección "Ubicación".
+    out = json.loads(T.ejecutar_tool("buscar_wiki", {"consulta": "ubicacion"}, {}))
+    assert any(r["seccion"] == "Ubicación" for r in out["resultados"])
+
+
+def test_buscar_wiki_sin_coincidencia_devuelve_indice(tmp_path, monkeypatch):
+    _wiki(tmp_path, monkeypatch)
+    out = json.loads(T.ejecutar_tool("buscar_wiki", {"consulta": "estacionamiento valet"}, {}))
+    assert out["resultados"] == []
+    assert "Precios" in out["indice"] and "Horarios" in out["indice"]
+
+
+def test_buscar_wiki_sin_archivo(tmp_path, monkeypatch):
+    monkeypatch.setattr(T.settings, "wiki_path", str(tmp_path / "noexiste.md"))
+    out = json.loads(T.ejecutar_tool("buscar_wiki", {"consulta": "precio"}, {}))
+    assert out["resultados"] == [] and "error" in out
 
 
 # --- agendar_cita: la garantía dura ------------------------------------------

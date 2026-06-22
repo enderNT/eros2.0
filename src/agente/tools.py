@@ -7,6 +7,7 @@ duras: una cita solo se da por hecha si Calendly devolvió `ok` (antes V3).
 
 import json
 import logging
+import unicodedata
 from datetime import datetime, timedelta
 from datetime import timezone as _tz
 
@@ -21,6 +22,26 @@ log = logging.getLogger(__name__)
 # --- Esquemas (lo que ve el modelo) ------------------------------------------
 
 TOOLS = [
+    {
+        "name": "buscar_wiki",
+        "description": (
+            "Busca información factual de la clínica (precios, horarios, servicios, "
+            "ubicación, formas de pago, políticas) en la base de conocimiento. Úsala "
+            "SIEMPRE que necesites un dato concreto; nunca inventes datos. Pasa palabras "
+            "clave en 'consulta'. Devuelve solo las secciones relevantes. Si no hay "
+            "coincidencias, devuelve el índice de secciones para que reformules."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "consulta": {
+                    "type": "string",
+                    "description": "Palabras clave del dato buscado, ej. 'precio valoración' u 'horarios polanco'.",
+                }
+            },
+            "required": ["consulta"],
+        },
+    },
     {
         "name": "ver_horarios",
         "description": (
@@ -79,6 +100,65 @@ TOOLS = [
 
 
 # --- Ejecutores --------------------------------------------------------------
+
+def _normaliza(s: str) -> str:
+    """minúsculas + sin acentos, para comparar sin importar tildes."""
+    s = unicodedata.normalize("NFD", (s or "").lower())
+    return "".join(c for c in s if unicodedata.category(c) != "Mn")
+
+
+def _secciones_wiki() -> list[tuple[str, str]]:
+    """Parte la wiki en (título, cuerpo) por encabezados markdown. Se relee en cada
+    llamada: así editar wiki.md se refleja sin reiniciar, y escala a medida que crece."""
+    try:
+        with open(settings.wiki_path, encoding="utf-8") as f:
+            texto = f.read()
+    except OSError:
+        return []
+    secciones: list[tuple[str, str]] = []
+    titulo, buf = "(intro)", []
+    for linea in texto.splitlines():
+        if linea.lstrip().startswith("#"):
+            if any(l.strip() for l in buf):
+                secciones.append((titulo, "\n".join(buf).strip()))
+            titulo = linea.lstrip("#").strip() or "(sin título)"
+            buf = [linea]
+        else:
+            buf.append(linea)
+    if any(l.strip() for l in buf):
+        secciones.append((titulo, "\n".join(buf).strip()))
+    return secciones
+
+
+def _buscar_wiki(args: dict, ctx: dict) -> str:
+    """Devuelve hasta 3 secciones relevantes por solapamiento de palabras clave
+    (título pesa más). Sin coincidencias → índice de secciones para reformular."""
+    secciones = _secciones_wiki()
+    if not secciones:
+        return json.dumps({"error": "base de conocimiento no disponible", "resultados": []})
+
+    indice = [t for t, _ in secciones]
+    terminos = {w for w in _normaliza(args.get("consulta", "")).split() if len(w) > 2}
+    if not terminos:
+        return json.dumps({"indice": indice})
+
+    puntuadas = []
+    for titulo, cuerpo in secciones:
+        cuerpo_norm = _normaliza(cuerpo)
+        titulo_norm = _normaliza(titulo)
+        score = sum(cuerpo_norm.count(w) for w in terminos)
+        score += sum(3 for w in terminos if w in titulo_norm)  # coincidencia en título pesa más
+        if score > 0:
+            puntuadas.append((score, titulo, cuerpo))
+
+    if not puntuadas:
+        return json.dumps(
+            {"resultados": [], "indice": indice, "nota": "sin coincidencias; reformula o revisa el índice"}
+        )
+    puntuadas.sort(key=lambda x: -x[0])
+    top = [{"seccion": t, "contenido": c} for _, t, c in puntuadas[:3]]
+    return json.dumps({"resultados": top})
+
 
 def _ver_horarios(args: dict, ctx: dict) -> str:
     cal = get_calendly()
@@ -149,6 +229,7 @@ def _escalar_a_humano(args: dict, ctx: dict) -> str:
 
 
 _EJECUTORES = {
+    "buscar_wiki": _buscar_wiki,
     "ver_horarios": _ver_horarios,
     "agendar_cita": _agendar_cita,
     "escalar_a_humano": _escalar_a_humano,

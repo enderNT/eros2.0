@@ -1,11 +1,13 @@
 """Ensamblado del system prompt en capas (loop ReAct).
 
 Orden por volatilidad, con breakpoints de caché:
-  Bloque 1 ⟨caché⟩: núcleo + playbook + wiki   (estable, compartido entre hilos)
-  Bloque 2 ⟨caché⟩: perfil del usuario          (por hilo)
+  Bloque 1 ⟨caché⟩: núcleo + playbook   (estable, compartido entre hilos)
+  Bloque 2 ⟨caché⟩: perfil del usuario  (por hilo)
 
-El historial de conversación va aparte, en `messages`. No hay recordatorio de
-máquina de estados: el "estado" de la charla ES el historial.
+La WIKI ya NO va en el system: se consulta por secciones con la herramienta
+`buscar_wiki` (tools.py), para no cargar el contexto con datos que crecen.
+El historial de conversación va aparte, en `messages`: el "estado" de la charla
+ES el historial.
 """
 
 import logging
@@ -16,27 +18,19 @@ log = logging.getLogger(__name__)
 
 NUCLEO = (
     "Eres el asistente virtual de Eros Neurona, una clínica de psicología y "
-    "neuromodulación. Sigues las directrices del PLAYBOOK al pie de la letra y "
-    "respondes datos factuales solo con la WIKI. No inventas información ni das "
-    "consejo clínico. Cuando una acción requiere agendar, consultar horarios o "
-    "escalar a una persona, usas las herramientas disponibles."
+    "neuromodulación. Sigues las directrices del PLAYBOOK al pie de la letra. "
+    "Para CUALQUIER dato factual (precios, horarios, servicios, ubicación, "
+    "políticas) consultas la herramienta `buscar_wiki` y nunca lo inventas. "
+    "Para agendar, ver horarios o escalar a una persona usas las demás herramientas."
 )
 
 
-def _leer(path: str, etiqueta: str) -> str:
+def cargar_playbook() -> str:
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(settings.playbook_path, encoding="utf-8") as f:
             return f.read()
     except OSError:
-        return f"<<{etiqueta} vacía — pendiente de contenido>>"
-
-
-def cargar_wiki() -> str:
-    return _leer(settings.wiki_path, "Wiki")
-
-
-def cargar_playbook() -> str:
-    return _leer(settings.playbook_path, "Playbook")
+        return "<<Playbook vacío — pendiente de contenido>>"
 
 
 def render_perfil(perfil: dict) -> str:
@@ -53,14 +47,13 @@ def render_perfil(perfil: dict) -> str:
 
 
 def construir_system(perfil: dict | None = None) -> list:
-    """Bloques de system con cache_control. El primero es estable (núcleo+playbook+
-    wiki) y se cachea compartido; el segundo es el perfil, por hilo."""
+    """Bloques de system con cache_control. El primero es estable (núcleo+playbook)
+    y se cachea compartido; el segundo es el perfil, por hilo. La wiki NO va aquí:
+    se consulta con buscar_wiki."""
     base = (
         f"{NUCLEO}\n\n"
         f"=== PLAYBOOK (directrices de comportamiento) ===\n{cargar_playbook()}\n"
-        f"=== FIN PLAYBOOK ===\n\n"
-        f"=== WIKI (datos factuales — única fuente para precios, horarios, etc.) ===\n"
-        f"{cargar_wiki()}\n=== FIN WIKI ==="
+        f"=== FIN PLAYBOOK ==="
     )
     bloques = [
         {"type": "text", "text": base, "cache_control": {"type": "ephemeral"}}

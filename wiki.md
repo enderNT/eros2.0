@@ -135,7 +135,3 @@ persona del equipo. [COMPLETAR: canal/teléfono de atención prioritaria, si lo 
 
 **¿Dan factura? ¿Trabajan con seguros?**
 [COMPLETAR: sí/no y requisitos.]
-
-
-
-Para el caso de autismo, esta bien preguntar grado de autismo, esta bien preguntar la edad. Esta bien preguntar para estudios previos
