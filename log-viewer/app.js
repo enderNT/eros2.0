@@ -57,6 +57,40 @@ function escapeText(value) {
   return String(value ?? "");
 }
 
+function callKind(call) {
+  if (call.status === "error") return "error";
+  if (call.provider === "memory") return "memory";
+  const text = `${call.provider || ""} ${call.model || ""} ${call.operation || ""}`.toLowerCase();
+  if (!text.includes("anthropic") && !call.model) return "neutral";
+  if (text.includes("haiku")) return "haiku";
+  if (text.includes("sonnet")) return "sonnet";
+  if (text.includes("opus")) return "opus";
+  return "llm";
+}
+
+function kindLabel(kind) {
+  return {
+    haiku: "LLM · Haiku",
+    sonnet: "LLM · Sonnet",
+    opus: "LLM · Opus",
+    llm: "LLM",
+    memory: "Memoria",
+    error: "Error",
+    neutral: "Evento",
+  }[kind] || "Evento";
+}
+
+function stageKind(stage) {
+  const kinds = stage.calls.map(callKind);
+  if (kinds.includes("error")) return "error";
+  const llmKinds = kinds.filter((kind) => ["haiku", "sonnet", "opus", "llm"].includes(kind));
+  if (!llmKinds.length) return kinds.includes("memory") ? "memory" : "neutral";
+  if (llmKinds.includes("sonnet")) return "sonnet";
+  if (llmKinds.includes("opus")) return "opus";
+  if (llmKinds.includes("haiku")) return "haiku";
+  return "llm";
+}
+
 function selectFlowInList(flowId) {
   for (const button of listEl.querySelectorAll(".flow-item")) {
     button.classList.toggle("active", button.dataset.flowId === String(flowId));
@@ -135,17 +169,21 @@ function renderFlowDetail(flow) {
   stageListEl.innerHTML = "";
 
   flow.stages.forEach((stage, index) => {
+    const kind = stageKind(stage);
     const stageEl = document.createElement("section");
-    stageEl.className = "stage";
+    stageEl.className = `stage kind-${kind}`;
     stageEl.dataset.open = "true";
     stageEl.innerHTML = `
-      <button class="stage-toggle" type="button">
+      <button class="stage-toggle" type="button" aria-expanded="true">
         <span class="stage-symbol">-</span>
         <span class="stage-title">
           <span class="step-label">Paso ${index + 1}</span>
           <strong></strong>
         </span>
-        <span class="badge blue">${stage.calls.length} eventos</span>
+        <span class="stage-badges">
+          <span class="badge badge-kind ${kind}">${kindLabel(kind)}</span>
+          <span class="badge count">${stage.calls.length} eventos</span>
+        </span>
       </button>
       <div class="stage-body"></div>
     `;
@@ -159,22 +197,31 @@ function renderFlowDetail(flow) {
 
 function renderCall(call, callIndex) {
   const card = document.createElement("article");
-  card.className = "call-card";
+  const kind = callKind(call);
+  const isOpen = callIndex === 0;
+  card.className = `call-card kind-${kind}`;
+  card.dataset.open = String(isOpen);
   const key = `call-${call.id}`;
   card.innerHTML = `
-    <div class="call-head">
+    <button class="call-toggle" type="button" aria-expanded="${isOpen}">
+      <span class="call-symbol">${isOpen ? "-" : "+"}</span>
       <div class="call-title">
-        <span class="meta">Evento ${callIndex + 1} · ${compactDate(call.created_at)}</span>
+        <span class="meta">Ejecucion ${callIndex + 1} · ${compactDate(call.created_at)}</span>
         <strong></strong>
       </div>
-      <span class="badge ${call.status === "error" ? "error" : "ok"}">${call.status || "ok"}</span>
+      <span class="call-badges">
+        <span class="badge badge-kind ${kind}">${kindLabel(kind)}</span>
+        <span class="badge ${call.status === "error" ? "error" : "ok"}">${call.status || "ok"}</span>
+      </span>
+    </button>
+    <div class="call-body" ${isOpen ? "" : "hidden"}>
+      <div class="tabs" role="tablist">
+        <button class="tab-button active" type="button" data-tab="${key}-input">Input</button>
+        <button class="tab-button" type="button" data-tab="${key}-output">Output</button>
+      </div>
+      <div class="tab-panel" data-panel="${key}-input"><pre></pre></div>
+      <div class="tab-panel" data-panel="${key}-output" hidden><pre></pre></div>
     </div>
-    <div class="tabs" role="tablist">
-      <button class="tab-button active" type="button" data-tab="${key}-input">Input</button>
-      <button class="tab-button" type="button" data-tab="${key}-output">Output</button>
-    </div>
-    <div class="tab-panel" data-panel="${key}-input"><pre></pre></div>
-    <div class="tab-panel" data-panel="${key}-output" hidden><pre></pre></div>
   `;
   card.querySelector(".call-title strong").textContent = call.model
     ? `${call.operation} · ${call.model}`
@@ -184,6 +231,7 @@ function renderCall(call, callIndex) {
   card.querySelectorAll(".tab-button").forEach((button) => {
     button.addEventListener("click", () => activateTab(card, button.dataset.tab));
   });
+  card.querySelector(".call-toggle").addEventListener("click", () => toggleCall(card));
   return card;
 }
 
@@ -200,7 +248,16 @@ function toggleStage(stageEl) {
   const isOpen = stageEl.dataset.open === "true";
   stageEl.dataset.open = String(!isOpen);
   stageEl.querySelector(".stage-symbol").textContent = isOpen ? "+" : "-";
+  stageEl.querySelector(".stage-toggle").setAttribute("aria-expanded", String(!isOpen));
   stageEl.querySelector(".stage-body").hidden = isOpen;
+}
+
+function toggleCall(card) {
+  const isOpen = card.dataset.open === "true";
+  card.dataset.open = String(!isOpen);
+  card.querySelector(".call-symbol").textContent = isOpen ? "+" : "-";
+  card.querySelector(".call-toggle").setAttribute("aria-expanded", String(!isOpen));
+  card.querySelector(".call-body").hidden = isOpen;
 }
 
 async function loadFlows() {
