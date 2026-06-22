@@ -1,0 +1,14 @@
+.git
+.venv
+venv
+__pycache__
+*.pyc
+.env
+data
+*.sqlite
+diagrams
+docs
+.claude
+.agents
+*.md
+!wiki.md

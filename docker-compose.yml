@@ -1,0 +1,18 @@
+services:
+  app:
+    build: .
+    image: eros-neurona
+    container_name: eros-neurona
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Persiste la memoria corta (checkpoints.sqlite) y larga (store.sqlite)
+      - eros_data:/data
+      # (Opcional) editar el wiki en vivo sin reconstruir la imagen:
+      # - ./wiki.md:/app/wiki.md:ro
+    restart: unless-stopped
+
+volumes:
+  eros_data:
