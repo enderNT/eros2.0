@@ -74,7 +74,13 @@ def responder(historial: list, perfil: dict, ctx: dict) -> str:
                 response_text=str(e),
                 status="error",
                 conversation_id=ctx.get("conversation_id"),
-                metadata={"purpose": "agent_loop", "iteration": vuelta},
+                flow_id=ctx.get("flow_id"),
+                message_id=ctx.get("message_id"),
+                stage="agent_response",
+                stage_label="Generacion de respuesta",
+                stage_order=2,
+                call_order=vuelta + 1,
+                metadata={"purpose": "agent_loop", "iteration": vuelta, "incoming_text": ctx.get("incoming_text")},
             )
             return _FALLBACK
 
@@ -85,6 +91,12 @@ def responder(historial: list, perfil: dict, ctx: dict) -> str:
             request_text=request_text,
             response_text=render_llm_response(resp),
             conversation_id=ctx.get("conversation_id"),
+            flow_id=ctx.get("flow_id"),
+            message_id=ctx.get("message_id"),
+            stage="agent_response",
+            stage_label="Generacion de respuesta",
+            stage_order=2,
+            call_order=vuelta + 1,
             metadata={"purpose": "agent_loop", "iteration": vuelta, "stop_reason": resp.stop_reason},
         )
 

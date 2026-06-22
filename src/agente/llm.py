@@ -61,10 +61,11 @@ def _fallback_crisis(texto: str) -> bool:
     return any(s in t for s in _SENALES)
 
 
-def detectar_crisis(texto: str) -> bool:
+def detectar_crisis(texto: str, ctx: dict | None = None) -> bool:
     """True si el mensaje sugiere crisis. Haiku con salida estructurada; si no hay
     API key o falla, cae a palabras clave (sobre-escala por seguridad)."""
     client = get_client()
+    ctx = ctx or {}
     if client is None:
         return _fallback_crisis(texto)
     try:
@@ -85,7 +86,14 @@ def detectar_crisis(texto: str) -> bool:
             model=settings.model_crisis,
             request_text=request_text,
             response_text=render_llm_response(resp),
-            metadata={"purpose": "crisis_check"},
+            conversation_id=ctx.get("conversation_id"),
+            flow_id=ctx.get("flow_id"),
+            message_id=ctx.get("message_id"),
+            stage="crisis_check",
+            stage_label="Chequeo de crisis",
+            stage_order=1,
+            call_order=1,
+            metadata={"purpose": "crisis_check", "incoming_text": ctx.get("incoming_text")},
         )
         out: Optional[ChequeoCrisis] = resp.parsed_output
         return out.crisis if out is not None else _fallback_crisis(texto)
@@ -99,6 +107,13 @@ def detectar_crisis(texto: str) -> bool:
                 request_text=request_text,
                 response_text=str(e),
                 status="error",
-                metadata={"purpose": "crisis_check"},
+                conversation_id=ctx.get("conversation_id"),
+                flow_id=ctx.get("flow_id"),
+                message_id=ctx.get("message_id"),
+                stage="crisis_check",
+                stage_label="Chequeo de crisis",
+                stage_order=1,
+                call_order=1,
+                metadata={"purpose": "crisis_check", "incoming_text": ctx.get("incoming_text")},
             )
         return _fallback_crisis(texto)

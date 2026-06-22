@@ -59,13 +59,16 @@ docker compose up -d --build
 ```
 
 - API: `http://127.0.0.1:8000`
-- Visor de llamadas LLM: `http://127.0.0.1:3101`
+- Visor de flujos LLM: `http://127.0.0.1:3101`
 - Postgres queda en el servicio `llm-logs-db`; el compose inyecta
   `DATABASE_URL=postgresql://agente:agente@llm-logs-db:5432/agente_logs`.
 
 El logger persiste la entrada textual y la respuesta textual de cada llamada
-Anthropic (`messages.parse` y `messages.create`). Si `DATABASE_URL` está vacío,
-el logger queda inactivo y la app sigue funcionando sin Postgres.
+Anthropic (`messages.parse` y `messages.create`) y las agrupa por flujo de
+mensaje (`flow_id = chatwoot:{message_id}`). En el visor, cada flujo muestra sus
+etapas en orden: chequeo de crisis, generación de respuesta y cualquier llamada
+adicional dentro de la misma etapa. Si `DATABASE_URL` está vacío, el logger queda
+inactivo y la app sigue funcionando sin Postgres.
 
 En **Coolify**:
 - Desplegar desde el `Dockerfile` (expone el puerto **8000**).

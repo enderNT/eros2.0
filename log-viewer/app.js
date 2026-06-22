@@ -1,4 +1,4 @@
-const listEl = document.querySelector("#log-list");
+const listEl = document.querySelector("#flow-list");
 const refreshButton = document.querySelector("#refresh");
 const searchInput = document.querySelector("#search");
 const limitSelect = document.querySelector("#limit");
@@ -11,11 +11,10 @@ const emptyDetailEl = document.querySelector("#empty-detail");
 const detailMetaEl = document.querySelector("#detail-meta");
 const detailTitleEl = document.querySelector("#detail-title");
 const detailStatusEl = document.querySelector("#detail-status");
-const requestTextEl = document.querySelector("#request-text");
-const responseTextEl = document.querySelector("#response-text");
+const stageListEl = document.querySelector("#stage-list");
 
-let allLogs = [];
-let selectedId = null;
+let allFlows = [];
+let selectedFlowId = null;
 let searchTimer = null;
 
 function setState(text, kind = "green") {
@@ -41,74 +40,168 @@ function compactDate(value) {
   }).format(new Date(value));
 }
 
-function titleFor(log) {
-  const conv = log.conversation_id ? `conv ${log.conversation_id}` : "sin conversacion";
-  return `${log.operation} · ${log.model || "modelo sin nombre"} · ${conv}`;
+function flowTitle(flow) {
+  const msg = flow.message_id ? `msg ${flow.message_id}` : flow.flow_id;
+  const conv = flow.conversation_id ? `conv ${flow.conversation_id}` : "sin conversacion";
+  return `${msg} · ${conv}`;
 }
 
-function previewFor(log) {
-  const text = log.request_text || log.response_text || "";
-  return text.replace(/\s+/g, " ").trim().slice(0, 180) || "Sin texto registrado";
+function previewFor(flow) {
+  return (flow.preview_text || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 180) || "Sin texto registrado";
 }
 
-function selectLog(id) {
-  selectedId = id;
-  const log = allLogs.find((item) => String(item.id) === String(id));
-  for (const button of listEl.querySelectorAll(".log-item")) {
-    button.classList.toggle("active", button.dataset.id === String(id));
+function escapeText(value) {
+  return String(value ?? "");
+}
+
+function selectFlowInList(flowId) {
+  for (const button of listEl.querySelectorAll(".flow-item")) {
+    button.classList.toggle("active", button.dataset.flowId === String(flowId));
   }
+}
 
-  if (!log) {
+async function selectFlow(flowId) {
+  selectedFlowId = flowId;
+  selectFlowInList(flowId);
+
+  if (!flowId) {
     detailEl.hidden = true;
     emptyDetailEl.hidden = false;
     return;
   }
 
-  emptyDetailEl.hidden = true;
-  detailEl.hidden = false;
-  detailMetaEl.textContent = `${formatDate(log.created_at)} · ${log.provider}`;
-  detailTitleEl.textContent = titleFor(log);
-  detailStatusEl.textContent = log.status || "ok";
-  detailStatusEl.className = `badge ${log.status === "error" ? "error" : "ok"}`;
-  requestTextEl.textContent = log.request_text || "";
-  responseTextEl.textContent = log.response_text || "";
+  setState("Cargando", "blue");
+  try {
+    const params = new URLSearchParams({ flow_id: flowId });
+    const res = await fetch(`/api/llm-flow?${params.toString()}`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    renderFlowDetail(data.flow);
+    setState("Listo", "green");
+  } catch (error) {
+    emptyDetailEl.hidden = false;
+    detailEl.hidden = true;
+    emptyDetailEl.querySelector("p").textContent = error.message;
+    setState("Error", "error");
+  }
 }
 
 function renderList() {
   listEl.innerHTML = "";
-  countEl.textContent = String(allLogs.length);
-  latestEl.textContent = allLogs[0] ? compactDate(allLogs[0].created_at) : "Sin datos";
+  countEl.textContent = String(allFlows.length);
+  latestEl.textContent = allFlows[0] ? compactDate(allFlows[0].last_created_at) : "Sin datos";
 
-  if (!allLogs.length) {
+  if (!allFlows.length) {
     const empty = document.createElement("div");
     empty.className = "empty-list";
-    empty.textContent = "No hay llamadas registradas para este filtro.";
+    empty.textContent = "No hay flujos registrados para este filtro.";
     listEl.append(empty);
-    selectLog(null);
+    selectFlow(null);
     return;
   }
 
-  for (const log of allLogs) {
+  for (const flow of allFlows) {
     const item = document.createElement("button");
     item.type = "button";
-    item.className = "log-item";
-    item.dataset.id = log.id;
+    item.className = "flow-item";
+    item.dataset.flowId = flow.flow_id;
     item.innerHTML = `
-      <span class="meta">${compactDate(log.created_at)} · ${log.status || "ok"}</span>
-      <span class="log-item-title"></span>
-      <span class="log-item-preview"></span>
+      <span class="meta">${compactDate(flow.last_created_at)} · ${flow.call_count} llamadas · ${flow.has_error ? "error" : "ok"}</span>
+      <span class="flow-item-title"></span>
+      <span class="flow-item-preview"></span>
     `;
-    item.querySelector(".log-item-title").textContent = titleFor(log);
-    item.querySelector(".log-item-preview").textContent = previewFor(log);
-    item.addEventListener("click", () => selectLog(log.id));
+    item.querySelector(".flow-item-title").textContent = flowTitle(flow);
+    item.querySelector(".flow-item-preview").textContent = previewFor(flow);
+    item.addEventListener("click", () => selectFlow(flow.flow_id));
     listEl.append(item);
   }
 
-  const stillExists = allLogs.some((log) => String(log.id) === String(selectedId));
-  selectLog(stillExists ? selectedId : allLogs[0].id);
+  const stillExists = allFlows.some((flow) => String(flow.flow_id) === String(selectedFlowId));
+  selectFlow(stillExists ? selectedFlowId : allFlows[0].flow_id);
 }
 
-async function loadLogs() {
+function renderFlowDetail(flow) {
+  emptyDetailEl.hidden = true;
+  detailEl.hidden = false;
+  detailMetaEl.textContent = `${formatDate(flow.first_created_at)} · ${flow.call_count} llamadas LLM`;
+  detailTitleEl.textContent = flowTitle(flow);
+  detailStatusEl.textContent = flow.status || "ok";
+  detailStatusEl.className = `badge ${flow.status === "error" ? "error" : "ok"}`;
+  stageListEl.innerHTML = "";
+
+  flow.stages.forEach((stage, index) => {
+    const stageEl = document.createElement("section");
+    stageEl.className = "stage";
+    stageEl.dataset.open = "true";
+    stageEl.innerHTML = `
+      <button class="stage-toggle" type="button">
+        <span class="stage-symbol">-</span>
+        <span class="stage-title">
+          <span class="step-label">Paso ${index + 1}</span>
+          <strong></strong>
+        </span>
+        <span class="badge blue">${stage.calls.length} ejecuciones</span>
+      </button>
+      <div class="stage-body"></div>
+    `;
+    stageEl.querySelector(".stage-title strong").textContent = stage.label;
+    stageEl.querySelector(".stage-toggle").addEventListener("click", () => toggleStage(stageEl));
+    const body = stageEl.querySelector(".stage-body");
+    stage.calls.forEach((call, callIndex) => body.append(renderCall(call, callIndex)));
+    stageListEl.append(stageEl);
+  });
+}
+
+function renderCall(call, callIndex) {
+  const card = document.createElement("article");
+  card.className = "call-card";
+  const key = `call-${call.id}`;
+  card.innerHTML = `
+    <div class="call-head">
+      <div class="call-title">
+        <span class="meta">Ejecucion ${callIndex + 1} · ${compactDate(call.created_at)}</span>
+        <strong></strong>
+      </div>
+      <span class="badge ${call.status === "error" ? "error" : "ok"}">${call.status || "ok"}</span>
+    </div>
+    <div class="tabs" role="tablist">
+      <button class="tab-button active" type="button" data-tab="${key}-input">Input</button>
+      <button class="tab-button" type="button" data-tab="${key}-output">Output</button>
+    </div>
+    <div class="tab-panel" data-panel="${key}-input"><pre></pre></div>
+    <div class="tab-panel" data-panel="${key}-output" hidden><pre></pre></div>
+  `;
+  card.querySelector(".call-title strong").textContent = `${call.operation} · ${call.model || "modelo sin nombre"}`;
+  card.querySelector(`[data-panel="${key}-input"] pre`).textContent = escapeText(call.request_text);
+  card.querySelector(`[data-panel="${key}-output"] pre`).textContent = escapeText(call.response_text);
+  card.querySelectorAll(".tab-button").forEach((button) => {
+    button.addEventListener("click", () => activateTab(card, button.dataset.tab));
+  });
+  return card;
+}
+
+function activateTab(card, tabId) {
+  card.querySelectorAll(".tab-button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.tab === tabId);
+  });
+  card.querySelectorAll(".tab-panel").forEach((panel) => {
+    panel.hidden = panel.dataset.panel !== tabId;
+  });
+}
+
+function toggleStage(stageEl) {
+  const isOpen = stageEl.dataset.open === "true";
+  stageEl.dataset.open = String(!isOpen);
+  stageEl.querySelector(".stage-symbol").textContent = isOpen ? "+" : "-";
+  stageEl.querySelector(".stage-body").hidden = isOpen;
+}
+
+async function loadFlows() {
   setState("Cargando", "blue");
   refreshButton.disabled = true;
   try {
@@ -116,18 +209,18 @@ async function loadLogs() {
       limit: limitSelect.value,
       q: searchInput.value.trim(),
     });
-    const res = await fetch(`/api/llm-logs?${params.toString()}`, {
+    const res = await fetch(`/api/llm-flows?${params.toString()}`, {
       headers: { Accept: "application/json" },
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    allLogs = Array.isArray(data.logs) ? data.logs : [];
+    allFlows = Array.isArray(data.flows) ? data.flows : [];
     dbStateEl.textContent = data.enabled ? "Postgres activo" : "Logger inactivo";
     dbStateEl.className = `badge ${data.enabled ? "blue" : "disabled"}`;
     setState(data.enabled ? "Listo" : "Inactivo", data.enabled ? "green" : "disabled");
     renderList();
   } catch (error) {
-    allLogs = [];
+    allFlows = [];
     listEl.innerHTML = "";
     const empty = document.createElement("div");
     empty.className = "empty-list";
@@ -136,17 +229,17 @@ async function loadLogs() {
     countEl.textContent = "0";
     latestEl.textContent = "Sin datos";
     setState("Error", "error");
-    selectLog(null);
+    selectFlow(null);
   } finally {
     refreshButton.disabled = false;
   }
 }
 
-refreshButton.addEventListener("click", loadLogs);
-limitSelect.addEventListener("change", loadLogs);
+refreshButton.addEventListener("click", loadFlows);
+limitSelect.addEventListener("change", loadFlows);
 searchInput.addEventListener("input", () => {
   clearTimeout(searchTimer);
-  searchTimer = setTimeout(loadLogs, 220);
+  searchTimer = setTimeout(loadFlows, 220);
 });
 
-loadLogs();
+loadFlows();

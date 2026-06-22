@@ -9,6 +9,7 @@ Orquestación lineal sin framework de grafos:
 """
 
 import logging
+from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -41,6 +42,22 @@ def llm_logs(limit: int = 100, q: str = ""):
     }
 
 
+@app.get("/debug/llm-flows")
+def llm_flows(limit: int = 100, q: str = ""):
+    return {
+        "enabled": get_llm_logger().enabled,
+        "flows": get_llm_logger().list_flows(limit, q),
+    }
+
+
+@app.get("/debug/llm-flow")
+def llm_flow(flow_id: str):
+    flow = get_llm_logger().get_flow(flow_id)
+    if flow is None:
+        return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+    return {"ok": True, "flow": flow}
+
+
 def _enviar(conversation_id, texto: str) -> None:
     """Manda un mensaje saliente por Chatwoot (si está configurado)."""
     cw = get_chatwoot()
@@ -58,9 +75,18 @@ def _procesar(ev: dict) -> str:
     """Lógica de un mensaje entrante (corre en threadpool: I/O bloqueante)."""
     conv = ev["conversation_id"]
     store = get_store()
+    message_id = ev.get("message_id")
+    flow_id = f"chatwoot:{message_id}" if message_id is not None else f"local:{uuid4().hex}"
+    llm_ctx = {
+        "conversation_id": conv,
+        "user_id": ev["user_id"],
+        "message_id": message_id,
+        "flow_id": flow_id,
+        "incoming_text": ev["texto"],
+    }
 
     # 1) Crisis: pre-chequeo determinista, fuera del loop.
-    if detectar_crisis(ev["texto"]):
+    if detectar_crisis(ev["texto"], llm_ctx):
         log.warning("crisis detectada en conv=%s → escalando", conv)
         texto = settings.crisis_message
         cw = get_chatwoot()
@@ -80,7 +106,7 @@ def _procesar(ev: dict) -> str:
     historial.append({"role": "user", "content": ev["texto"]})
 
     # 3) Loop del agente.
-    ctx = {"conversation_id": conv, "user_id": ev["user_id"]}
+    ctx = dict(llm_ctx)
     texto = responder(historial, perfil, ctx)
 
     # 4) Salida + persistencia (solo turnos de texto).

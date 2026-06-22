@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>LLM Logbook</title>
+    <title>LLM Flowbook</title>
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
     <main class="app-shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">LLM Logbook</p>
-          <h1>Registro de llamadas</h1>
+          <p class="eyebrow">LLM Flowbook</p>
+          <h1>Flujos de mensajes</h1>
         </div>
         <div class="top-actions">
           <span id="state" class="badge green">Listo</span>
@@ -22,7 +22,7 @@
       <section class="controls" aria-label="Filtros">
         <label class="field search-field">
           <span>Busqueda</span>
-          <input id="search" type="search" autocomplete="off" placeholder="texto, modelo, estado o conversacion">
+          <input id="search" type="search" autocomplete="off" placeholder="mensaje, conversacion, modelo o texto">
         </label>
         <label class="field limit-field">
           <span>Limite</span>
@@ -37,11 +37,11 @@
 
       <section class="summary-row" aria-label="Resumen">
         <article class="stat">
-          <span>Total listado</span>
+          <span>Flujos listados</span>
           <strong id="count">0</strong>
         </article>
         <article class="stat">
-          <span>Ultima llamada</span>
+          <span>Ultimo flujo</span>
           <strong id="latest">Sin datos</strong>
         </article>
         <article class="stat">
@@ -51,17 +51,20 @@
       </section>
 
       <section class="workspace">
-        <aside class="list-panel" aria-label="Listado general">
+        <aside class="list-panel" aria-label="Listado de flujos">
           <div class="panel-head">
-            <h2>Listado general</h2>
+            <div>
+              <p class="meta">Listado</p>
+              <h2>Flujos</h2>
+            </div>
             <span id="db-state" class="badge blue">DB</span>
           </div>
-          <div id="log-list" class="log-list"></div>
+          <div id="flow-list" class="flow-list"></div>
         </aside>
 
-        <article class="detail-panel" aria-label="Detalle">
+        <article class="detail-panel" aria-label="Detalle del flujo">
           <div id="empty-detail" class="empty-detail">
-            <p>Selecciona una llamada para ver entrada y respuesta.</p>
+            <p>Selecciona un flujo para ver sus ejecuciones LLM en orden.</p>
           </div>
           <div id="detail" class="detail" hidden>
             <div class="detail-head">
@@ -71,16 +74,7 @@
               </div>
               <span id="detail-status" class="badge"></span>
             </div>
-            <div class="text-grid">
-              <section class="text-pane">
-                <h3>Entrada textual</h3>
-                <pre id="request-text"></pre>
-              </section>
-              <section class="text-pane">
-                <h3>Respuesta textual</h3>
-                <pre id="response-text"></pre>
-              </section>
-            </div>
+            <div id="stage-list" class="stage-list"></div>
           </div>
         </article>
       </section>
