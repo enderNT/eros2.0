@@ -18,7 +18,7 @@ from starlette.concurrency import run_in_threadpool
 from .agent import responder
 from .chatwoot import get_chatwoot
 from .config import settings
-from .llm import detectar_crisis
+from .llm import compactar_historial, detectar_crisis
 from .llm_logger import get_llm_logger, render_data_text
 from .store import get_store
 from .webhook import parse_evento
@@ -101,6 +101,64 @@ def _log_memory_event(
     )
 
 
+def _compactar_historial_si_corresponde(store, ctx: dict) -> None:
+    conv = ctx["conversation_id"]
+    total = store.contar_historial(conv)
+    keep = max(1, int(settings.history_window))
+    if keep >= total or total <= settings.history_compact_limit:
+        return
+
+    turnos = store.cargar_historial_completo(conv)
+    viejos_disponibles = max(0, total - keep)
+    overlap = max(0, min(int(settings.history_overlap), viejos_disponibles))
+    recientes = turnos[-keep:]
+    viejos = turnos[:-keep]
+    solape = viejos[-overlap:] if overlap else []
+    turnos_a_resumir = [
+        {"role": t["role"], "content": t["content"]}
+        for t in viejos
+    ]
+    resumen_previo = store.get_resumen(conv)
+    nuevo_resumen = compactar_historial(
+        resumen_previo=resumen_previo,
+        turnos=turnos_a_resumir,
+        ctx=ctx,
+    )
+    if not nuevo_resumen:
+        return
+
+    store.set_resumen(conv, nuevo_resumen, ctx.get("user_id"))
+    turnos_a_conservar = [*solape, *recientes]
+    store.reemplazar_historial(
+        conv,
+        [{"role": t["role"], "content": t["content"]} for t in turnos_a_conservar],
+        ctx.get("user_id"),
+    )
+    _log_memory_event(
+        operation="memory.summary.write",
+        request={
+            "conversation_id": conv,
+            "keep": keep,
+            "history_compact_limit": settings.history_compact_limit,
+            "history_overlap": settings.history_overlap,
+            "overlap_aplicado": overlap,
+            "turnos_resumidos": len(viejos),
+            "turnos_conservados_verbatim": len(turnos_a_conservar),
+            "resumen_a_guardar": nuevo_resumen,
+        },
+        response={
+            "status": "ok",
+            "historial_total_antes": total,
+            "historial_total_despues": len(turnos_a_conservar),
+        },
+        ctx=ctx,
+        stage="memory_summary_write",
+        stage_label="Persistencia de resumen",
+        stage_order=60,
+        call_order=1,
+    )
+
+
 def _procesar(ev: dict) -> str:
     """Lógica de un mensaje entrante (corre en threadpool: I/O bloqueante)."""
     conv = ev["conversation_id"]
@@ -126,8 +184,8 @@ def _procesar(ev: dict) -> str:
             except Exception as e:  # noqa: BLE001
                 log.error("crisis: set_atributo falló: %s", e)
         _enviar(conv, texto)
-        store.agregar_turno(conv, "user", ev["texto"])
-        store.agregar_turno(conv, "assistant", texto)
+        store.agregar_turno(conv, "user", ev["texto"], ev["user_id"])
+        store.agregar_turno(conv, "assistant", texto, ev["user_id"])
         _log_memory_event(
             operation="memory.history.write",
             request={
@@ -144,10 +202,12 @@ def _procesar(ev: dict) -> str:
             stage_order=40,
             call_order=1,
         )
+        _compactar_historial_si_corresponde(store, llm_ctx)
         return texto
 
     # 2) Contexto: perfil (memoria larga) + historial (memoria corta).
     perfil = store.get_perfil(ev["user_id"])
+    resumen = store.get_resumen(conv)
     historial = store.cargar_historial(conv, settings.history_window)
     _log_memory_event(
         operation="memory.read",
@@ -156,10 +216,11 @@ def _procesar(ev: dict) -> str:
             "conversation_id": conv,
             "history_window": settings.history_window,
             "mensaje_entrante": ev["texto"],
-            "lecturas": ["perfil", "historial"],
+            "lecturas": ["perfil", "resumen", "historial"],
         },
         response={
             "perfil_recuperado": perfil,
+            "resumen_recuperado": resumen,
             "historial_recuperado": historial,
         },
         ctx=llm_ctx,
@@ -172,12 +233,12 @@ def _procesar(ev: dict) -> str:
 
     # 3) Loop del agente.
     ctx = dict(llm_ctx)
-    texto = responder(historial, perfil, ctx)
+    texto = responder(historial, perfil, ctx, resumen_conversacion=resumen)
 
     # 4) Salida + persistencia (solo turnos de texto).
     _enviar(conv, texto)
-    store.agregar_turno(conv, "user", ev["texto"])
-    store.agregar_turno(conv, "assistant", texto)
+    store.agregar_turno(conv, "user", ev["texto"], ev["user_id"])
+    store.agregar_turno(conv, "assistant", texto, ev["user_id"])
     _log_memory_event(
         operation="memory.history.write",
         request={
@@ -193,7 +254,8 @@ def _procesar(ev: dict) -> str:
         stage_label="Persistencia de historial",
         stage_order=40,
         call_order=1,
-    )
+        )
+    _compactar_historial_si_corresponde(store, llm_ctx)
     return texto
 
 

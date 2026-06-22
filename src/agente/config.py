@@ -13,9 +13,10 @@ class Settings(BaseSettings):
     model_crisis: str = "claude-haiku-4-5"
     model_agente: str = "claude-opus-4-8"
 
-    # Memoria corta (checkpointer SQLite)
-    checkpoint_db_path: str = "data/checkpoints.sqlite"
+    # Memoria conversacional
     history_window: int = 10
+    history_compact_limit: int = 16
+    history_overlap: int = 1
 
     # Canal (Chatwoot)
     chatwoot_base_url: str = ""
@@ -33,12 +34,12 @@ class Settings(BaseSettings):
     # Crisis: mensaje/recursos aprobados por la clínica (hueco — T17)
     crisis_message: str = "<<recursos de crisis — definir con la clínica>>"
 
-    # Memoria larga (store propio), Wiki factual y Playbook de directrices
-    store_db_path: str = "data/store.sqlite"
+    # Wiki factual y Playbook de directrices
     wiki_path: str = "wiki.md"
     playbook_path: str = "playbook.md"
 
-    # Observabilidad LLM (Postgres). Si está vacío, el logger queda inactivo.
+    # Postgres para memoria + observabilidad. Si está vacío, el logger queda inactivo
+    # y el store no puede operar.
     database_url: str = ""
 
     # Loop del agente

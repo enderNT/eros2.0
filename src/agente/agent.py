@@ -36,7 +36,7 @@ def _log_envio(system_blocks, messages) -> None:
     log.debug("LLM ← system(%s)\n  messages(%d):\n%s", sizes, len(messages), conv)
 
 
-def responder(historial: list, perfil: dict, ctx: dict) -> str:
+def responder(historial: list, perfil: dict, ctx: dict, resumen_conversacion: str | None = None) -> str:
     """Ejecuta el loop y devuelve el texto de respuesta para el usuario.
 
     historial: lista de {role: 'user'|'assistant', content: str} (ventana ya recortada).
@@ -49,7 +49,7 @@ def responder(historial: list, perfil: dict, ctx: dict) -> str:
         log.warning("responder: sin ANTHROPIC_API_KEY → fallback")
         return _FALLBACK
 
-    system_blocks = construir_system(perfil)
+    system_blocks = construir_system(perfil, resumen_conversacion)
     # Copia mutable del historial: aquí sí agregamos turnos de herramienta (efímeros).
     messages: list = [dict(m) for m in historial]
     _log_envio(system_blocks, messages)

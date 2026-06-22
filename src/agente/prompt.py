@@ -1,13 +1,14 @@
 """Ensamblado del system prompt en capas (loop ReAct).
 
 Orden por volatilidad, con breakpoints de caché:
-  Bloque 1 ⟨caché⟩: núcleo + playbook   (estable, compartido entre hilos)
-  Bloque 2 ⟨caché⟩: perfil del usuario  (por hilo)
+  Bloque 1 ⟨caché⟩: núcleo + playbook              (estable)
+  Bloque 2 ⟨caché⟩: perfil del usuario             (por hilo)
+  Bloque 3 ⟨caché⟩: resumen de conversación previa (por hilo)
 
 La WIKI ya NO va en el system: se consulta por secciones con la herramienta
 `buscar_wiki` (tools.py), para no cargar el contexto con datos que crecen.
-El historial de conversación va aparte, en `messages`: el "estado" de la charla
-ES el historial.
+El historial reciente va aparte, en `messages`; lo viejo se conserva como resumen
+rodante.
 """
 
 import logging
@@ -46,10 +47,18 @@ def render_perfil(perfil: dict) -> str:
     )
 
 
-def construir_system(perfil: dict | None = None) -> list:
+def render_resumen_conversacion(resumen: str) -> str:
+    return (
+        "RESUMEN DE CONVERSACIÓN PREVIA (estado conversacional efímero; "
+        "no repetir datos administrativos del perfil):\n"
+        f"{resumen.strip()}"
+    )
+
+
+def construir_system(perfil: dict | None = None, resumen_conversacion: str | None = None) -> list:
     """Bloques de system con cache_control. El primero es estable (núcleo+playbook)
-    y se cachea compartido; el segundo es el perfil, por hilo. La wiki NO va aquí:
-    se consulta con buscar_wiki."""
+    y se cachea compartido; los siguientes son perfil y resumen, por hilo. La wiki
+    NO va aquí: se consulta con buscar_wiki."""
     base = (
         f"{NUCLEO}\n\n"
         f"=== PLAYBOOK (directrices de comportamiento) ===\n{cargar_playbook()}\n"
@@ -63,6 +72,14 @@ def construir_system(perfil: dict | None = None) -> list:
             {
                 "type": "text",
                 "text": render_perfil(perfil),
+                "cache_control": {"type": "ephemeral"},
+            }
+        )
+    if resumen_conversacion:
+        bloques.append(
+            {
+                "type": "text",
+                "text": render_resumen_conversacion(resumen_conversacion),
                 "cache_control": {"type": "ephemeral"},
             }
         )

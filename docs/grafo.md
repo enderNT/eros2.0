@@ -6,7 +6,7 @@ Traducción del diseño al grafo de LangGraph: topología, nodos, canales del `s
 
 ```python
 # StateGraph(State)
-messages   # Annotated[list, add_messages] — reducer nativo; al LLM va una ventana de 10
+messages   # historial Postgres; al LLM va una ventana reciente verbatim
 perfil     # {identidad, memoria_larga}     — lo escribe ensamblar_contexto (hidratado fresco)
 ruteo      # {intencion, motivo}            — lo escribe supervisor
 tarea      # {tipo, subestado, link_enviado, datos{nombre,correo,asunto}, slot_elegido}
@@ -14,7 +14,7 @@ meta       # {bot_activo, crisis, user_id, canal, handoff_reason}
 salida     # texto a enviar + resultado del agente
 ```
 
-La **memoria corta** es el checkpointer de LangGraph (por `thread_id`). El **perfil** se hidrata fresco desde un store propio cada turno; el checkpoint solo guarda `user_id` (ver ADR 0002).
+La **memoria corta** es la ventana reciente de `historial` en Postgres por `conversation_id`. El **perfil** se hidrata fresco desde el mismo store cada turno; los turnos antiguos se fusionan en un resumen rodante por conversación (ver ADR 0002).
 
 ## Nodos
 
@@ -22,7 +22,7 @@ La **memoria corta** es el checkpointer de LangGraph (por `thread_id`). El **per
 |------|-----------------|-----|---------|
 | `entrada` | Lee `bot_activo` del atributo de conversación (Chatwoot) + datos del canal | mensaje, Chatwoot | `meta` |
 | `chequeo_crisis` | Check rápido (Haiku, salida estructurada `{crisis: bool}`) | `messages` | `meta.crisis` |
-| `ensamblar_contexto` | Hidrata `perfil` del store (por `user_id`), arma ventana de 10 y el recordatorio de estado | store, `messages`, `tarea` | `perfil` |
+| `ensamblar_contexto` | Hidrata `perfil`, resumen rodante y ventana reciente desde Postgres | store, `messages`, `tarea` | `perfil` |
 | `supervisor` | Clasifica intención (Haiku, salida estructurada). Recibe versión recortada + `tarea` para sticky | contexto recortado | `ruteo` |
 | `agente_faq` | Responde solo desde la Wiki; abstención + ofrece humano si falta | Wiki, contexto | `salida` |
 | `agente_citas` | Máquina de estados; tools Calendly (disponibilidad, `POST /invitees`) | `tarea`, contexto | `tarea`, `salida` |
@@ -62,7 +62,7 @@ ensamblar_contexto ──► supervisor ─r_intencion─┬─ faq ────
 ## Notas de traducción
 
 1. `entrada` y `chequeo_crisis` van **antes** de `ensamblar_contexto`: un mensaje con bot off o en crisis no paga el costo de hidratar perfil ni clasificar.
-2. El **sticky routing no es un nodo**: vive en que `tarea` persiste en el checkpoint y el `supervisor` la recibe como contexto.
+2. El **sticky routing no es un nodo**: vive en el estado conversacional persistido y el `supervisor` lo recibe como contexto.
 3. `agente_citas` es el único nodo "gordo" (máquina de estados interna + tools Calendly); los demás son de un solo paso.
 
 ## Máquina de estados de `agente_citas`

@@ -25,18 +25,25 @@ def main() -> None:
             if not texto:
                 continue
 
-            if detectar_crisis(texto):
+            ctx = {
+                "conversation_id": conv,
+                "user_id": user,
+                "message_id": None,
+                "flow_id": f"cli:{conv}",
+                "incoming_text": texto,
+            }
+            if detectar_crisis(texto, ctx):
                 print("bot>", settings.crisis_message, "[escalado]")
                 continue
 
             perfil = store.get_perfil(user)
+            resumen = store.get_resumen(conv)
             historial = store.cargar_historial(conv, settings.history_window)
             historial.append({"role": "user", "content": texto})
-            ctx = {"conversation_id": conv, "user_id": user}
-            resp = responder(historial, perfil, ctx)
+            resp = responder(historial, perfil, ctx, resumen_conversacion=resumen)
 
-            store.agregar_turno(conv, "user", texto)
-            store.agregar_turno(conv, "assistant", resp)
+            store.agregar_turno(conv, "user", texto, user)
+            store.agregar_turno(conv, "assistant", resp, user)
             print("bot>", resp, "[escalado]" if ctx.get("escalado") else "")
     except (KeyboardInterrupt, EOFError):
         print("\nbye")

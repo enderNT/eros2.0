@@ -28,11 +28,9 @@ services:
     depends_on:
       llm-logs-db:
         condition: service_healthy
-    volumes:
-      # Persiste la memoria corta (checkpoints.sqlite) y larga (store.sqlite)
-      - eros_data:/data
-      # (Opcional) editar el wiki en vivo sin reconstruir la imagen:
-      # - ./wiki.md:/app/wiki.md:ro
+    # (Opcional) editar el wiki en vivo sin reconstruir la imagen:
+    # volumes:
+    #   - ./wiki.md:/app/wiki.md:ro
     restart: unless-stopped
 
   llm-log-viewer:
@@ -46,5 +44,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  eros_data:
   llm_logs_pgdata:

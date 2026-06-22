@@ -71,7 +71,10 @@ El historial de mensajes de la sesión más el último mensaje. Volátil, cambia
 La información de la máquina de estados en curso (p.ej. de una Cita): subestado, banderas, datos recolectados. Volátil.
 
 **Memoria corta**:
-Estado de la sesión, provisto nativamente por LangGraph (checkpoint por `thread_id` + el `state` del grafo).
+Ventana reciente del historial, persistida en Postgres por `conversation_id` y enviada verbatim al LLM.
+
+**Resumen rodante**:
+Estado conversacional efímero de turnos antiguos, persistido en Postgres por `conversation_id` y enviado como bloque del system prompt.
 
 **Memoria larga**:
 Resumen estructurado del usuario, persistido entre sesiones en un store propio (no la Memory tool de Anthropic), bajo control de la aplicación por ser datos sensibles (PII clínica).

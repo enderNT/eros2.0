@@ -5,20 +5,20 @@ bot clinica psi. langgraph+anthropic. enruta conversa/faq/cita. crisis->humano. 
 
 ## §C
 - py>=3.11. langgraph. anthropic sdk (no openai).
-- mem corta = checkpointer sqlite (por thread_id). mem larga = store propio, determinista. NO Memory tool anthropic.
+- mem conversacional = historial postgres + resumen rodante por conversacion. mem larga = perfil postgres, determinista. NO Memory tool anthropic.
 - supervisor+crisis = haiku. agentes = opus 4.8.
 - citas: grafo manda transiciones, LLM solo redacta.
 - faq: solo wiki en contexto + caching. NO RAG.
 - PII clinica: mem larga solo admin, nunca contenido terapeutico.
-- deploy docker/coolify. puerto 8000. sqlite en volumen /data.
+- deploy docker/coolify. puerto 8000. postgres en compose.
 - 1 agente por turno. sin re-ruteo intra-turno v1.
-- sin compaction v1. ventana rodante 10 msgs.
+- compaction historial: resumen rodante + ventana reciente verbatim.
 
 ## §I
 - I.chatwoot ! webhook entrante (message_created), enviar msg (API), atributo conversacion `bot_activo`.
 - I.calendly ! GET /event_types, GET /event_type_available_times (7d max), POST /invitees (req: event_type,start_time,name,email,timezone,location.kind). OAuth/PAT. plan pago.
 - I.anthropic ! messages API. haiku(supervisor,crisis) + opus(agentes). output_config.format. prompt caching.
-- I.store ! mem larga por user_id (canal). campos: citas_previas,ultima_cita.
+- I.store ! postgres. perfil por user_id; historial/resumen por conversation_id. campos perfil: citas_previas,ultima_cita.
 - I.wiki ! markdown curado por secciones (servicios,precios,horarios,ubicaciones,modalidades,politicas,terapeutas).
 
 ## §V
@@ -27,7 +27,7 @@ bot clinica psi. langgraph+anthropic. enruta conversa/faq/cita. crisis->humano. 
 - V3 ! cita nunca subestado=CONFIRMADA sin 2xx de POST /invitees.
 - V4 ! faq responde SOLO desde wiki. falta -> abstencion + ofrece humano. nunca inventa.
 - V5 ! mem larga solo admin (no clinico). escrita por grafo (determinista), no por modelo.
-- V6 ! perfil hidratado fresco cada turno. NO en checkpoint (solo user_id).
+- V6 ! perfil hidratado fresco cada turno desde postgres.
 - V7 ! handoff -> bot_activo=false (atributo conversacion). no se reactiva solo (humano externo).
 - V8 ! supervisor salida estructurada intencion in {faq,agendar,conversacion,handoff}.
 - V9 ! cada agente emite resultado in {resuelto,fuera_de_alcance,pide_humano}.
@@ -45,7 +45,7 @@ T5|x|extraer_slot: LLM extrae start_time UTC del msg|V10,I.anthropic
 T6|x|agente_faq: cargar wiki, prompt caching, regla abstencion|V4,I.wiki,I.anthropic
 T7|x|agente_conversacion: opus, nucleo+perfil+ventana|V9,I.anthropic
 T8|x|prompt assembly: nucleo+guardrails, bloque por nodo, perfil, recordatorio system al fondo, 2 cache breakpoints|V4
-T9|x|store mem larga: backend (sqlite/pg) get/put por user_id|V5,V6,I.store
+T9|x|store mem larga: postgres get/put por user_id|V5,V6,I.store
 T10|x|ensamblar_contexto real: hidratar perfil + armar recordatorio estado + ventana|V6
 T11|x|persistir evento: CONFIRMADA -> +1 citas_previas, set ultima_cita|V5
 T12|x|chatwoot enviar: POST msg via API|I.chatwoot

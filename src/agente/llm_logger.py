@@ -427,6 +427,10 @@ def _stage_label(stage: str, model: str | None) -> str:
         return "Persistencia de historial"
     if stage == "long_memory_write":
         return "Escritura de memoria larga"
+    if stage == "history_compaction":
+        return "Compactacion de historial"
+    if stage == "memory_summary_write":
+        return "Persistencia de resumen"
     if stage == "agent_response":
         return "Generacion de respuesta"
     if model:
