@@ -1,11 +1,9 @@
 [project]
 name = "agente"
 version = "0.1.0"
-description = "Asistente de clínica psicológica (LangGraph + Anthropic SDK)"
+description = "Asistente de clínica psicológica (Anthropic SDK · loop ReAct)"
 requires-python = ">=3.11"
 dependencies = [
-  "langgraph>=0.2.0",
-  "langgraph-checkpoint-sqlite>=2.0.0",
   "anthropic>=0.40.0",
   "fastapi>=0.110.0",
   "uvicorn[standard]>=0.29.0",

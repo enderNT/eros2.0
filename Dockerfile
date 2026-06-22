@@ -2,9 +2,9 @@ FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    CHECKPOINT_DB_PATH=/data/checkpoints.sqlite \
     STORE_DB_PATH=/data/store.sqlite \
-    WIKI_PATH=/app/wiki.md
+    WIKI_PATH=/app/wiki.md \
+    PLAYBOOK_PATH=/app/playbook.md
 
 WORKDIR /app
 
@@ -13,8 +13,9 @@ COPY pyproject.toml ./
 COPY src ./src
 RUN pip install --no-cache-dir .
 
-# Contenido factual (Wiki) — leído en runtime
+# Contenido leído en runtime: Wiki (datos factuales) + Playbook (directrices)
 COPY wiki.md ./
+COPY playbook.md ./
 
 # Volumen para la memoria corta (SQLite). En Coolify montar un volumen persistente en /data.
 RUN mkdir -p /data

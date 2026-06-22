@@ -1,8 +1,12 @@
-"""Cliente Anthropic + helpers de salida estructurada (compartidos por nodos LLM)."""
+"""Cliente Anthropic + detección de crisis (pre-chequeo determinista).
+
+La crisis se evalúa ANTES del loop del agente: un mensaje de riesgo no debe pasar
+por el juicio conversacional del modelo, se escala directo (ADR 0003).
+"""
 
 import logging
 from functools import lru_cache
-from typing import Literal, Optional, Type, TypeVar
+from typing import Literal, Optional
 
 from pydantic import BaseModel
 
@@ -10,37 +14,12 @@ from .config import settings
 
 log = logging.getLogger(__name__)
 
-T = TypeVar("T", bound=BaseModel)
 
-
-# --- Esquemas de salida estructurada -----------------------------------------
-
-class Clasificacion(BaseModel):
-    """Salida del Supervisor (V8)."""
-
-    intencion: Literal["faq", "agendar", "conversacion", "handoff"]
-    motivo: str
-
-
-class ChequeoCrisis(BaseModel):
-    """Salida del chequeo de crisis (V2)."""
-
-    crisis: bool
-    motivo: str
-
-
-class SlotExtraido(BaseModel):
-    """Slot concreto extraído de un mensaje (V10)."""
-
-    encontrado: bool
-    start_time: Optional[str] = None  # ISO 8601 UTC
-
-
-# --- Cliente + parse genérico ------------------------------------------------
+# --- Cliente -----------------------------------------------------------------
 
 @lru_cache(maxsize=1)
 def get_client():
-    """Cliente Anthropic, o None si no hay API key (los nodos caen al fallback)."""
+    """Cliente Anthropic, o None si no hay API key (los callers degradan)."""
     if not settings.anthropic_api_key:
         return None
     import anthropic
@@ -48,49 +27,55 @@ def get_client():
     return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 
-def _parse(model: str, system: str, contexto: str, schema: Type[T], max_tokens: int = 256) -> Optional[T]:
-    """Llama con salida estructurada. None si no hay key o si falla (caller usa fallback)."""
+# --- Detección de crisis -----------------------------------------------------
+
+class ChequeoCrisis(BaseModel):
+    crisis: bool
+    motivo: str
+
+
+CRISIS_SYSTEM = (
+    "Eres un detector de señales de crisis en un asistente de una clínica psicológica. "
+    "Indica crisis=true SOLO si el mensaje sugiere riesgo inminente: ideación o intención "
+    "suicida, autolesión, o crisis aguda que requiere atención humana inmediata. "
+    "Ante duda razonable de riesgo, prefiere crisis=true. 'motivo' es una frase corta."
+)
+
+# Red de seguridad para el fallback (sin API key): mejor sobre-escalar que omitir.
+_SENALES = (
+    "suicid",
+    "matarme",
+    "quitarme la vida",
+    "no quiero vivir",
+    "autolesion",
+    "autolesión",
+    "lastimarme",
+    "hacerme daño",
+    "acabar con todo",
+)
+
+
+def _fallback_crisis(texto: str) -> bool:
+    t = (texto or "").lower()
+    return any(s in t for s in _SENALES)
+
+
+def detectar_crisis(texto: str) -> bool:
+    """True si el mensaje sugiere crisis. Haiku con salida estructurada; si no hay
+    API key o falla, cae a palabras clave (sobre-escala por seguridad)."""
     client = get_client()
     if client is None:
-        return None
+        return _fallback_crisis(texto)
     try:
         resp = client.messages.parse(
-            model=model,
-            max_tokens=max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": contexto}],
-            output_format=schema,
+            model=settings.model_crisis,
+            max_tokens=128,
+            system=CRISIS_SYSTEM,
+            messages=[{"role": "user", "content": texto or ""}],
+            output_format=ChequeoCrisis,
         )
-        return resp.parsed_output
-    except Exception as e:  # noqa: BLE001 — degradar a fallback, nunca tumbar el grafo
-        log.warning("_parse(%s) falló, usando fallback: %s", schema.__name__, e)
-        return None
-
-
-# --- Wrappers por tarea ------------------------------------------------------
-
-def clasificar_intencion(system: str, contexto: str) -> Optional[Clasificacion]:
-    return _parse(settings.model_supervisor, system, contexto, Clasificacion)
-
-
-def detectar_crisis(system: str, contexto: str) -> Optional[ChequeoCrisis]:
-    return _parse(settings.model_crisis, system, contexto, ChequeoCrisis)
-
-
-def extraer_slot_llm(system: str, contexto: str) -> Optional[SlotExtraido]:
-    return _parse(settings.model_supervisor, system, contexto, SlotExtraido)
-
-
-def generar(system_blocks: list, messages: list, model: str, max_tokens: int = 1024) -> Optional[str]:
-    """Respuesta libre (no estructurada). None si no hay key o falla."""
-    client = get_client()
-    if client is None:
-        return None
-    try:
-        resp = client.messages.create(
-            model=model, max_tokens=max_tokens, system=system_blocks, messages=messages
-        )
-        return "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
+        out: Optional[ChequeoCrisis] = resp.parsed_output
+        return out.crisis if out is not None else _fallback_crisis(texto)
     except Exception as e:  # noqa: BLE001
-        log.warning("generar falló: %s", e)
-        return None
+        log.warning("detectar_crisis falló, usando fallback: %s", e)
+        return _fallback_crisis(texto)

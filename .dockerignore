@@ -12,3 +12,4 @@ docs
 .agents
 *.md
 !wiki.md
+!playbook.md

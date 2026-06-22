@@ -1,8 +1,7 @@
-"""Tests de Chatwoot: cliente, enviar, handoff (T12, T13 · V7). Sin red."""
+"""Tests del cliente Chatwoot (enviar mensaje, set atributo). Sin red."""
 
 import httpx
 
-import agente.nodes.egress as Eg
 from agente.chatwoot import ChatwootClient
 
 
@@ -36,24 +35,3 @@ def test_set_atributo():
     _cw(h).set_atributo(42, "bot_activo", False)
     assert "/conversations/42/custom_attributes" in cap["url"]
     assert "bot_activo" in cap["body"]
-
-
-def test_v7_handoff_apaga_bot(monkeypatch):
-    acciones = []
-
-    class FakeCW:
-        def enviar_mensaje(self, c, t):
-            acciones.append(("msg", c, t))
-
-        def set_atributo(self, c, k, v):
-            acciones.append(("attr", c, k, v))
-
-    monkeypatch.setattr(Eg, "get_chatwoot", lambda: FakeCW())
-    out = Eg.handoff({"meta": {"conversation_id": 42, "handoff_reason": "cortesia"}, "salida": {}})
-    assert ("attr", 42, "bot_activo", False) in acciones
-    assert out["meta"]["bot_activo"] is False
-
-
-def test_enviar_node_local_sin_cw(monkeypatch):
-    monkeypatch.setattr(Eg, "get_chatwoot", lambda: None)
-    assert Eg.enviar({"salida": {"texto": "x"}, "meta": {}}) == {}

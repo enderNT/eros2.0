@@ -33,9 +33,13 @@ class Settings(BaseSettings):
     # Crisis: mensaje/recursos aprobados por la clínica (hueco — T17)
     crisis_message: str = "<<recursos de crisis — definir con la clínica>>"
 
-    # Memoria larga (store propio) y Wiki
+    # Memoria larga (store propio), Wiki factual y Playbook de directrices
     store_db_path: str = "data/store.sqlite"
     wiki_path: str = "wiki.md"
+    playbook_path: str = "playbook.md"
+
+    # Loop del agente
+    max_iteraciones: int = 6  # tope de vueltas tool-use → respuesta
 
     log_level: str = "INFO"
 

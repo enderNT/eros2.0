@@ -28,6 +28,38 @@ class Store:
                 ultima_cita TEXT
             )"""
         )
+        # Memoria corta: historial de conversación por conversación de Chatwoot.
+        # Reemplaza al checkpointer de LangGraph. Solo turnos user/assistant de texto.
+        self._conn.execute(
+            """CREATE TABLE IF NOT EXISTS historial(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                ts TEXT DEFAULT CURRENT_TIMESTAMP
+            )"""
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_hist_conv ON historial(conversation_id, id)"
+        )
+        self._conn.commit()
+
+    # --- Historial (memoria corta) -------------------------------------------
+
+    def cargar_historial(self, conversation_id: str, limite: int = 10) -> list[dict]:
+        """Últimos `limite` turnos (en orden cronológico) de una conversación."""
+        rows = self._conn.execute(
+            "SELECT role, content FROM historial WHERE conversation_id = ? "
+            "ORDER BY id DESC LIMIT ?",
+            (str(conversation_id), limite),
+        ).fetchall()
+        return [{"role": r, "content": c} for r, c in reversed(rows)]
+
+    def agregar_turno(self, conversation_id: str, role: str, content: str) -> None:
+        self._conn.execute(
+            "INSERT INTO historial(conversation_id, role, content) VALUES(?, ?, ?)",
+            (str(conversation_id), role, content),
+        )
         self._conn.commit()
 
     def get_perfil(self, user_id: str) -> dict:

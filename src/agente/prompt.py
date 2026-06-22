@@ -1,86 +1,76 @@
-"""Ensamblado del prompt en capas (T8 · docs/grafo.md).
+"""Ensamblado del system prompt en capas (loop ReAct).
 
-Orden por volatilidad con 2 breakpoints de cache:
-  [system] Capa1 núcleo+guardrails + Capa2 bloque de nodo  ⟨cache #1: compartido⟩
-           Capa3 perfil                                     ⟨cache #2: por hilo⟩
-  [messages] ventana + recordatorio de estado (role:system al fondo)
+Orden por volatilidad, con breakpoints de caché:
+  Bloque 1 ⟨caché⟩: núcleo + playbook + wiki   (estable, compartido entre hilos)
+  Bloque 2 ⟨caché⟩: perfil del usuario          (por hilo)
+
+El historial de conversación va aparte, en `messages`. No hay recordatorio de
+máquina de estados: el "estado" de la charla ES el historial.
 """
 
-from .nodes.util import ventana
+import logging
+
+from .config import settings
+
+log = logging.getLogger(__name__)
 
 NUCLEO = (
-    "Eres el asistente virtual de una clínica psicológica. Hablas con calidez y respeto. "
-    "Nunca das consejo clínico, diagnóstico ni interpretación terapéutica. "
-    "Nunca inventas información (precios, horarios, datos): si no la tienes, lo dices y ofreces "
-    "ayuda humana. Si la persona expresa una situación de riesgo, no la manejas tú: se escala a "
-    "un humano. Te limitas a tu rol: informar, agendar y acompañar la conversación."
+    "Eres el asistente virtual de Eros Neurona, una clínica de psicología y "
+    "neuromodulación. Sigues las directrices del PLAYBOOK al pie de la letra y "
+    "respondes datos factuales solo con la WIKI. No inventas información ni das "
+    "consejo clínico. Cuando una acción requiere agendar, consultar horarios o "
+    "escalar a una persona, usas las herramientas disponibles."
 )
+
+
+def _leer(path: str, etiqueta: str) -> str:
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return f"<<{etiqueta} vacía — pendiente de contenido>>"
+
+
+def cargar_wiki() -> str:
+    return _leer(settings.wiki_path, "Wiki")
+
+
+def cargar_playbook() -> str:
+    return _leer(settings.playbook_path, "Playbook")
 
 
 def render_perfil(perfil: dict) -> str:
     ident = (perfil or {}).get("identidad", {})
     mem = (perfil or {}).get("memoria_larga", {})
     return (
-        "PERFIL DEL USUARIO:\n"
+        "PERFIL DEL USUARIO (datos administrativos, no clínicos):\n"
         f"- Nombre: {ident.get('nombre') or 'desconocido'}\n"
+        f"- Correo: {ident.get('correo') or 'desconocido'}\n"
         f"- Tipo: {ident.get('es_paciente') or 'n/d'}\n"
         f"- Citas previas: {mem.get('citas_previas', 0)}\n"
         f"- Última cita: {mem.get('ultima_cita') or 'ninguna'}"
     )
 
 
-def render_recordatorio(state: dict) -> str:
-    tarea = state.get("tarea", {})
-    if tarea.get("tipo") == "citas" and tarea.get("subestado") not in (
-        None,
-        "CONFIRMADA",
-        "ABANDONADA",
-    ):
-        d = tarea.get("datos", {})
-        return (
-            f"ESTADO DE LA TAREA: cita en curso (subestado={tarea.get('subestado')}). "
-            f"Datos: nombre={d.get('nombre') or '-'}, correo={d.get('correo') or '-'}, "
-            f"asunto={d.get('asunto') or '-'}, slot={tarea.get('slot_elegido') or '-'}."
-        )
-    return "ESTADO DE LA TAREA: ninguna en curso."
-
-
-def _to_api(msgs: list) -> list:
-    out = []
-    for m in msgs:
-        if isinstance(m, dict):
-            role, content = m.get("role", "user"), m.get("content", "")
-        else:
-            role = "assistant" if getattr(m, "type", "") == "ai" else "user"
-            content = getattr(m, "content", "")
-        out.append({"role": role, "content": content})
-    return out
-
-
-def construir_prompt(state: dict, bloque_nodo: str, *, incluir_perfil: bool = True) -> dict:
-    """Devuelve {system: [...bloques con cache_control...], messages: [...]}"""
-    system_blocks = [
-        {
-            "type": "text",
-            "text": NUCLEO + "\n\n" + bloque_nodo,
-            "cache_control": {"type": "ephemeral"},  # breakpoint #1 (compartido)
-        }
+def construir_system(perfil: dict | None = None) -> list:
+    """Bloques de system con cache_control. El primero es estable (núcleo+playbook+
+    wiki) y se cachea compartido; el segundo es el perfil, por hilo."""
+    base = (
+        f"{NUCLEO}\n\n"
+        f"=== PLAYBOOK (directrices de comportamiento) ===\n{cargar_playbook()}\n"
+        f"=== FIN PLAYBOOK ===\n\n"
+        f"=== WIKI (datos factuales — única fuente para precios, horarios, etc.) ===\n"
+        f"{cargar_wiki()}\n=== FIN WIKI ==="
+    )
+    bloques = [
+        {"type": "text", "text": base, "cache_control": {"type": "ephemeral"}}
     ]
-    if incluir_perfil:
-        system_blocks.append(
+    if perfil is not None:
+        bloques.append(
             {
                 "type": "text",
-                "text": render_perfil(state.get("perfil", {})),
-                "cache_control": {"type": "ephemeral"},  # breakpoint #2 (por hilo)
+                "text": render_perfil(perfil),
+                "cache_control": {"type": "ephemeral"},
             }
         )
-    messages = _to_api(ventana(state))
-    # Recordatorio de estado al fondo, como <system-reminder> dentro del turno del usuario.
-    # (No usamos role:"system" en messages: es beta/model-gated y rompe en modelos que no
-    #  lo soportan — "role 'system' is not supported on this model".)
-    reminder = f"<system-reminder>\n{render_recordatorio(state)}\n</system-reminder>"
-    if messages and messages[-1]["role"] == "user":
-        messages[-1] = {"role": "user", "content": f"{messages[-1]['content']}\n\n{reminder}"}
-    else:
-        messages.append({"role": "user", "content": reminder})
-    return {"system": system_blocks, "messages": messages}
+    return bloques
