@@ -14,6 +14,13 @@
   --red-text: #9f2f2d;
   --yellow-bg: #fbf3db;
   --yellow-text: #956400;
+  --code-bg: #fbfbfa;
+  --code-border: #e4e1da;
+  --json-key: #7a3d8a;
+  --json-string: #1f6c55;
+  --json-number: #9a4d16;
+  --json-bool: #1f5f9f;
+  --json-null: #77706a;
 }
 
 * {
@@ -526,21 +533,193 @@ h3 {
   padding: 12px 14px 14px;
 }
 
-pre {
+.log-content {
   min-height: 260px;
   max-height: 520px;
+  overflow: auto;
+  border: 1px solid var(--code-border);
+  border-radius: 8px;
+  background: var(--code-bg);
+}
+
+.log-content.is-json {
+  background:
+    linear-gradient(90deg, rgba(31, 108, 159, 0.08), transparent 160px),
+    var(--code-bg);
+}
+
+.log-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 38px;
+  gap: 12px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--code-border);
+  background: rgba(251, 251, 250, 0.96);
+  backdrop-filter: blur(8px);
+}
+
+.log-label,
+.json-segment-title {
+  color: var(--muted);
+  font-family: "Geist Mono", "SF Mono", "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.copy-button,
+.json-copy {
+  min-width: 58px;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--code-border);
+  border-radius: 4px;
+  color: var(--ink);
+  background: #ffffff;
+  font-family: "Geist Mono", "SF Mono", "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.copy-button:hover,
+.json-copy:hover {
+  border-color: rgba(17, 17, 17, 0.28);
+  background: #f3f1eb;
+}
+
+.copy-button.copied,
+.json-copy.copied {
+  color: var(--green-text);
+  border-color: rgba(52, 101, 56, 0.28);
+  background: var(--green-bg);
+}
+
+.copy-button.copy-error,
+.json-copy.copy-error {
+  color: var(--red-text);
+  border-color: rgba(159, 47, 45, 0.28);
+  background: var(--red-bg);
+}
+
+.plain-log {
+  min-height: 260px;
   margin: 0;
   padding: 14px;
-  overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  border: 1px solid #eaeaea;
-  border-radius: 8px;
   color: #2f3437;
-  background: var(--surface-soft);
+  background: transparent;
   font-family: "Geist Mono", "SF Mono", "JetBrains Mono", monospace;
   font-size: 12px;
   line-height: 1.55;
+}
+
+.json-segment-title {
+  padding: 12px 14px 4px;
+}
+
+.json-viewer {
+  padding: 12px 14px 16px;
+  color: #2f3437;
+  font-family: "Geist Mono", "SF Mono", "JetBrains Mono", monospace;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.json-node {
+  min-width: 0;
+}
+
+.json-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  list-style: none;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.json-summary::-webkit-details-marker {
+  display: none;
+}
+
+.json-summary::before {
+  content: "+";
+  display: grid;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid var(--code-border);
+  border-radius: 4px;
+  color: var(--muted);
+  background: #ffffff;
+  font-size: 11px;
+  line-height: 1;
+}
+
+details[open] > .json-summary::before {
+  content: "-";
+}
+
+.json-key {
+  color: var(--json-key);
+  font-weight: 650;
+}
+
+.json-type {
+  color: var(--muted);
+}
+
+.json-copy {
+  min-width: 52px;
+  min-height: 22px;
+  margin-left: 4px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.json-summary:hover .json-copy,
+.json-leaf:hover .json-copy,
+.json-copy:focus {
+  opacity: 1;
+}
+
+.json-children {
+  margin-left: 9px;
+  padding-left: 18px;
+  border-left: 1px solid var(--code-border);
+}
+
+.json-leaf {
+  min-height: 24px;
+  padding-left: 24px;
+  overflow-wrap: anywhere;
+}
+
+.json-value-string {
+  color: var(--json-string);
+}
+
+.json-value-number {
+  color: var(--json-number);
+}
+
+.json-value-boolean {
+  color: var(--json-bool);
+}
+
+.json-value-null {
+  color: var(--json-null);
+  font-style: italic;
 }
 
 @media (max-width: 980px) {
@@ -578,5 +757,9 @@ pre {
   .call-badges {
     grid-column: 2;
     justify-content: flex-start;
+  }
+
+  .json-copy {
+    opacity: 1;
   }
 }

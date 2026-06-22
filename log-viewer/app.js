@@ -57,6 +57,186 @@ function escapeText(value) {
   return String(value ?? "");
 }
 
+function parseJson(value) {
+  const text = escapeText(value).trim();
+  if (!text || !["{", "["].includes(text[0])) return null;
+  try {
+    const parsed = JSON.parse(text);
+    return { value: parsed, raw: JSON.stringify(parsed, null, 2) };
+  } catch {
+    return null;
+  }
+}
+
+function structuredSegments(value) {
+  const text = escapeText(value).trim();
+  const json = parseJson(text);
+  if (json) return [{ title: "JSON", ...json }];
+
+  const blockPattern = /(\[[^\]\n]+])\n([\s\S]*?)(?=\n\n\[[^\]\n]+]\n|$)/g;
+  const segments = [];
+  let match;
+  while ((match = blockPattern.exec(text)) !== null) {
+    const blockJson = parseJson(match[2]);
+    if (!blockJson) return [];
+    segments.push({ title: match[1], ...blockJson });
+  }
+  return segments.length ? segments : [];
+}
+
+function summarizeJson(value) {
+  if (Array.isArray(value)) return `Array(${value.length})`;
+  if (value && typeof value === "object") return `Object(${Object.keys(value).length})`;
+  if (typeof value === "string") return JSON.stringify(value);
+  return String(value);
+}
+
+function jsonType(value) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
+async function copyText(text, button) {
+  try {
+    await navigator.clipboard.writeText(escapeText(text));
+    const previous = button.textContent;
+    button.textContent = "Copiado";
+    button.classList.add("copied");
+    setTimeout(() => {
+      button.textContent = previous;
+      button.classList.remove("copied");
+    }, 1100);
+  } catch {
+    button.textContent = "Error";
+    button.classList.add("copy-error");
+    setTimeout(() => {
+      button.textContent = "Copiar";
+      button.classList.remove("copy-error");
+    }, 1400);
+  }
+}
+
+function renderContentPanel(panel, title, text) {
+  panel.innerHTML = "";
+  const rawText = escapeText(text);
+  const shell = document.createElement("div");
+  shell.className = "log-content";
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "log-toolbar";
+  const label = document.createElement("span");
+  label.className = "log-label";
+  label.textContent = title;
+  const copyButton = document.createElement("button");
+  copyButton.type = "button";
+  copyButton.className = "copy-button";
+  copyButton.title = `Copiar ${title.toLowerCase()}`;
+  copyButton.setAttribute("aria-label", `Copiar ${title.toLowerCase()}`);
+  copyButton.textContent = "Copiar";
+  copyButton.addEventListener("click", () => copyText(rawText, copyButton));
+  toolbar.append(label, copyButton);
+  shell.append(toolbar);
+
+  const segments = structuredSegments(rawText);
+  if (segments.length) {
+    shell.classList.add("is-json");
+    segments.forEach((segment, index) => {
+      if (segments.length > 1) {
+        const segmentTitle = document.createElement("div");
+        segmentTitle.className = "json-segment-title";
+        segmentTitle.textContent = segment.title || `JSON ${index + 1}`;
+        shell.append(segmentTitle);
+      }
+      shell.append(renderJsonTree(segment.value, segment.raw, segment.title || title));
+    });
+  } else {
+    const pre = document.createElement("pre");
+    pre.className = "plain-log";
+    pre.textContent = rawText;
+    shell.append(pre);
+  }
+
+  panel.append(shell);
+}
+
+function renderJsonTree(value, raw, title) {
+  const root = document.createElement("div");
+  root.className = "json-viewer";
+  root.dataset.jsonTitle = title;
+  root.append(renderJsonNode(value, "", raw, true));
+  return root;
+}
+
+function renderJsonNode(value, key = "", raw = "", root = false) {
+  const type = jsonType(value);
+  const row = document.createElement("div");
+  row.className = `json-node json-${type}`;
+
+  if ((type === "object" || type === "array") && value !== null) {
+    const details = document.createElement("details");
+    details.open = root;
+    const summary = document.createElement("summary");
+    summary.className = "json-summary";
+
+    const keyEl = document.createElement("span");
+    keyEl.className = "json-key";
+    keyEl.textContent = key ? `"${key}"` : "";
+
+    const typeEl = document.createElement("span");
+    typeEl.className = "json-type";
+    typeEl.textContent = summarizeJson(value);
+
+    const copyButton = document.createElement("button");
+    copyButton.type = "button";
+    copyButton.className = "json-copy";
+    copyButton.title = key ? `Copiar ${key}` : "Copiar JSON";
+    copyButton.setAttribute("aria-label", copyButton.title);
+    copyButton.textContent = "Copiar";
+    copyButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      copyText(root ? raw : JSON.stringify(value, null, 2), copyButton);
+    });
+
+    if (key) summary.append(keyEl, document.createTextNode(": "));
+    summary.append(typeEl, copyButton);
+    details.append(summary);
+
+    const children = document.createElement("div");
+    children.className = "json-children";
+    const entries = Array.isArray(value) ? value.map((item, index) => [index, item]) : Object.entries(value);
+    entries.forEach(([childKey, childValue]) => {
+      children.append(renderJsonNode(childValue, String(childKey)));
+    });
+    details.append(children);
+    row.append(details);
+    return row;
+  }
+
+  const line = document.createElement("div");
+  line.className = "json-leaf";
+  if (key) {
+    const keyEl = document.createElement("span");
+    keyEl.className = "json-key";
+    keyEl.textContent = `"${key}"`;
+    line.append(keyEl, document.createTextNode(": "));
+  }
+  const valueEl = document.createElement("span");
+  valueEl.className = `json-value json-value-${type}`;
+  valueEl.textContent = type === "string" ? JSON.stringify(value) : String(value);
+  const copyButton = document.createElement("button");
+  copyButton.type = "button";
+  copyButton.className = "json-copy json-copy-leaf";
+  copyButton.title = key ? `Copiar ${key}` : "Copiar valor";
+  copyButton.setAttribute("aria-label", copyButton.title);
+  copyButton.textContent = "Copiar";
+  copyButton.addEventListener("click", () => copyText(JSON.stringify(value), copyButton));
+  line.append(valueEl, copyButton);
+  row.append(line);
+  return row;
+}
+
 function callKind(call) {
   if (call.status === "error") return "error";
   if (call.provider === "memory") return "memory";
@@ -219,15 +399,15 @@ function renderCall(call, callIndex) {
         <button class="tab-button active" type="button" data-tab="${key}-input">Input</button>
         <button class="tab-button" type="button" data-tab="${key}-output">Output</button>
       </div>
-      <div class="tab-panel" data-panel="${key}-input"><pre></pre></div>
-      <div class="tab-panel" data-panel="${key}-output" hidden><pre></pre></div>
+      <div class="tab-panel" data-panel="${key}-input"></div>
+      <div class="tab-panel" data-panel="${key}-output" hidden></div>
     </div>
   `;
   card.querySelector(".call-title strong").textContent = call.model
     ? `${call.operation} · ${call.model}`
     : call.operation;
-  card.querySelector(`[data-panel="${key}-input"] pre`).textContent = escapeText(call.request_text);
-  card.querySelector(`[data-panel="${key}-output"] pre`).textContent = escapeText(call.response_text);
+  renderContentPanel(card.querySelector(`[data-panel="${key}-input"]`), "Input", call.request_text);
+  renderContentPanel(card.querySelector(`[data-panel="${key}-output"]`), "Output", call.response_text);
   card.querySelectorAll(".tab-button").forEach((button) => {
     button.addEventListener("click", () => activateTab(card, button.dataset.tab));
   });
