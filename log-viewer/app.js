@@ -111,7 +111,7 @@ function renderList() {
     item.className = "flow-item";
     item.dataset.flowId = flow.flow_id;
     item.innerHTML = `
-      <span class="meta">${compactDate(flow.last_created_at)} · ${flow.call_count} llamadas · ${flow.has_error ? "error" : "ok"}</span>
+      <span class="meta">${compactDate(flow.last_created_at)} · ${flow.call_count} eventos · ${flow.has_error ? "error" : "ok"}</span>
       <span class="flow-item-title"></span>
       <span class="flow-item-preview"></span>
     `;
@@ -128,7 +128,7 @@ function renderList() {
 function renderFlowDetail(flow) {
   emptyDetailEl.hidden = true;
   detailEl.hidden = false;
-  detailMetaEl.textContent = `${formatDate(flow.first_created_at)} · ${flow.call_count} llamadas LLM`;
+  detailMetaEl.textContent = `${formatDate(flow.first_created_at)} · ${flow.call_count} eventos`;
   detailTitleEl.textContent = flowTitle(flow);
   detailStatusEl.textContent = flow.status || "ok";
   detailStatusEl.className = `badge ${flow.status === "error" ? "error" : "ok"}`;
@@ -145,7 +145,7 @@ function renderFlowDetail(flow) {
           <span class="step-label">Paso ${index + 1}</span>
           <strong></strong>
         </span>
-        <span class="badge blue">${stage.calls.length} ejecuciones</span>
+        <span class="badge blue">${stage.calls.length} eventos</span>
       </button>
       <div class="stage-body"></div>
     `;
@@ -164,7 +164,7 @@ function renderCall(call, callIndex) {
   card.innerHTML = `
     <div class="call-head">
       <div class="call-title">
-        <span class="meta">Ejecucion ${callIndex + 1} · ${compactDate(call.created_at)}</span>
+        <span class="meta">Evento ${callIndex + 1} · ${compactDate(call.created_at)}</span>
         <strong></strong>
       </div>
       <span class="badge ${call.status === "error" ? "error" : "ok"}">${call.status || "ok"}</span>
@@ -176,7 +176,9 @@ function renderCall(call, callIndex) {
     <div class="tab-panel" data-panel="${key}-input"><pre></pre></div>
     <div class="tab-panel" data-panel="${key}-output" hidden><pre></pre></div>
   `;
-  card.querySelector(".call-title strong").textContent = `${call.operation} · ${call.model || "modelo sin nombre"}`;
+  card.querySelector(".call-title strong").textContent = call.model
+    ? `${call.operation} · ${call.model}`
+    : call.operation;
   card.querySelector(`[data-panel="${key}-input"] pre`).textContent = escapeText(call.request_text);
   card.querySelector(`[data-panel="${key}-output"] pre`).textContent = escapeText(call.response_text);
   card.querySelectorAll(".tab-button").forEach((button) => {

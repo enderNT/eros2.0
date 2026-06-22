@@ -14,6 +14,7 @@ from datetime import timezone as _tz
 from .calendly import get_calendly
 from .chatwoot import get_chatwoot
 from .config import settings
+from .llm_logger import get_llm_logger, render_data_text
 from .store import get_store
 
 log = logging.getLogger(__name__)
@@ -204,8 +205,60 @@ def _agendar_cita(args: dict, ctx: dict) -> str:
         if user_id:
             try:
                 get_store().registrar_cita(user_id, args["slot"])
+                get_llm_logger().record(
+                    provider="memory",
+                    operation="memory.long.write",
+                    model=None,
+                    status="ok",
+                    conversation_id=ctx.get("conversation_id"),
+                    flow_id=ctx.get("flow_id"),
+                    message_id=ctx.get("message_id"),
+                    stage="long_memory_write",
+                    stage_label="Escritura de memoria larga",
+                    stage_order=35,
+                    call_order=1,
+                    request_text=render_data_text(
+                        {
+                            "user_id": user_id,
+                            "memoria_a_guardar": {
+                                "evento": "cita_confirmada",
+                                "ultima_cita": args["slot"],
+                                "incrementar_citas_previas": 1,
+                            },
+                            "origen": "tool.agendar_cita",
+                        }
+                    ),
+                    response_text=render_data_text({"status": "ok", "guardado": True}),
+                    metadata={"purpose": "memory.long.write", "tool": "agendar_cita"},
+                )
             except Exception as e:  # noqa: BLE001
                 log.warning("registrar_cita falló: %s", e)
+                get_llm_logger().record(
+                    provider="memory",
+                    operation="memory.long.write",
+                    model=None,
+                    status="error",
+                    conversation_id=ctx.get("conversation_id"),
+                    flow_id=ctx.get("flow_id"),
+                    message_id=ctx.get("message_id"),
+                    stage="long_memory_write",
+                    stage_label="Escritura de memoria larga",
+                    stage_order=35,
+                    call_order=1,
+                    request_text=render_data_text(
+                        {
+                            "user_id": user_id,
+                            "memoria_a_guardar": {
+                                "evento": "cita_confirmada",
+                                "ultima_cita": args["slot"],
+                                "incrementar_citas_previas": 1,
+                            },
+                            "origen": "tool.agendar_cita",
+                        }
+                    ),
+                    response_text=render_data_text({"status": "error", "error": str(e)}),
+                    metadata={"purpose": "memory.long.write", "tool": "agendar_cita"},
+                )
         return json.dumps({"status": "ok", "slot": args["slot"]})
     if res.status == "slot_taken":
         return json.dumps({"status": "slot_taken", "detalle": "ese horario se ocupó"})

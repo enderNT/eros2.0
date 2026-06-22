@@ -53,6 +53,10 @@ def _json_text(value: Any) -> str:
     return json.dumps(_safe_json(value), ensure_ascii=False, indent=2, sort_keys=True)
 
 
+def render_data_text(value: Any) -> str:
+    return _truncate(_json_text(value))
+
+
 def _block_to_text(block: Any) -> str:
     if isinstance(block, str):
         return block
@@ -168,7 +172,7 @@ class LlmCallLogger:
         *,
         provider: str,
         operation: str,
-        model: str,
+        model: str | None,
         request_text: str,
         response_text: str | None,
         status: str = "ok",
@@ -415,6 +419,14 @@ def get_llm_logger() -> LlmCallLogger:
 def _stage_label(stage: str, model: str | None) -> str:
     if stage == "crisis_check":
         return "Chequeo de crisis"
+    if stage == "memory_read":
+        return "Lectura de memoria"
+    if stage == "memory_write":
+        return "Escritura de memoria"
+    if stage == "history_persist":
+        return "Persistencia de historial"
+    if stage == "long_memory_write":
+        return "Escritura de memoria larga"
     if stage == "agent_response":
         return "Generacion de respuesta"
     if model:

@@ -19,7 +19,7 @@ from .agent import responder
 from .chatwoot import get_chatwoot
 from .config import settings
 from .llm import detectar_crisis
-from .llm_logger import get_llm_logger
+from .llm_logger import get_llm_logger, render_data_text
 from .store import get_store
 from .webhook import parse_evento
 
@@ -71,6 +71,36 @@ def _enviar(conversation_id, texto: str) -> None:
         log.error("enviar a Chatwoot falló (conv=%s): %s", conversation_id, e)
 
 
+def _log_memory_event(
+    *,
+    operation: str,
+    request: dict,
+    response: dict,
+    ctx: dict,
+    stage: str,
+    stage_label: str,
+    stage_order: int,
+    call_order: int,
+    status: str = "ok",
+) -> None:
+    get_llm_logger().record(
+        provider="memory",
+        operation=operation,
+        model=None,
+        status=status,
+        conversation_id=ctx.get("conversation_id"),
+        flow_id=ctx.get("flow_id"),
+        message_id=ctx.get("message_id"),
+        stage=stage,
+        stage_label=stage_label,
+        stage_order=stage_order,
+        call_order=call_order,
+        request_text=render_data_text(request),
+        response_text=render_data_text(response),
+        metadata={"purpose": operation},
+    )
+
+
 def _procesar(ev: dict) -> str:
     """Lógica de un mensaje entrante (corre en threadpool: I/O bloqueante)."""
     conv = ev["conversation_id"]
@@ -98,11 +128,46 @@ def _procesar(ev: dict) -> str:
         _enviar(conv, texto)
         store.agregar_turno(conv, "user", ev["texto"])
         store.agregar_turno(conv, "assistant", texto)
+        _log_memory_event(
+            operation="memory.history.write",
+            request={
+                "conversation_id": conv,
+                "turnos_a_guardar": [
+                    {"role": "user", "content": ev["texto"]},
+                    {"role": "assistant", "content": texto},
+                ],
+            },
+            response={"status": "ok", "turnos_guardados": 2},
+            ctx=llm_ctx,
+            stage="history_persist",
+            stage_label="Persistencia de historial",
+            stage_order=40,
+            call_order=1,
+        )
         return texto
 
     # 2) Contexto: perfil (memoria larga) + historial (memoria corta).
     perfil = store.get_perfil(ev["user_id"])
     historial = store.cargar_historial(conv, settings.history_window)
+    _log_memory_event(
+        operation="memory.read",
+        request={
+            "user_id": ev["user_id"],
+            "conversation_id": conv,
+            "history_window": settings.history_window,
+            "mensaje_entrante": ev["texto"],
+            "lecturas": ["perfil", "historial"],
+        },
+        response={
+            "perfil_recuperado": perfil,
+            "historial_recuperado": historial,
+        },
+        ctx=llm_ctx,
+        stage="memory_read",
+        stage_label="Lectura de memoria",
+        stage_order=20,
+        call_order=1,
+    )
     historial.append({"role": "user", "content": ev["texto"]})
 
     # 3) Loop del agente.
@@ -113,6 +178,22 @@ def _procesar(ev: dict) -> str:
     _enviar(conv, texto)
     store.agregar_turno(conv, "user", ev["texto"])
     store.agregar_turno(conv, "assistant", texto)
+    _log_memory_event(
+        operation="memory.history.write",
+        request={
+            "conversation_id": conv,
+            "turnos_a_guardar": [
+                {"role": "user", "content": ev["texto"]},
+                {"role": "assistant", "content": texto},
+            ],
+        },
+        response={"status": "ok", "turnos_guardados": 2},
+        ctx=llm_ctx,
+        stage="history_persist",
+        stage_label="Persistencia de historial",
+        stage_order=40,
+        call_order=1,
+    )
     return texto
 
 

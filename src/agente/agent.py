@@ -78,7 +78,7 @@ def responder(historial: list, perfil: dict, ctx: dict) -> str:
                 message_id=ctx.get("message_id"),
                 stage="agent_response",
                 stage_label="Generacion de respuesta",
-                stage_order=2,
+                stage_order=30,
                 call_order=vuelta + 1,
                 metadata={"purpose": "agent_loop", "iteration": vuelta, "incoming_text": ctx.get("incoming_text")},
             )
@@ -95,7 +95,7 @@ def responder(historial: list, perfil: dict, ctx: dict) -> str:
             message_id=ctx.get("message_id"),
             stage="agent_response",
             stage_label="Generacion de respuesta",
-            stage_order=2,
+            stage_order=30,
             call_order=vuelta + 1,
             metadata={"purpose": "agent_loop", "iteration": vuelta, "stop_reason": resp.stop_reason},
         )

@@ -91,7 +91,7 @@ def detectar_crisis(texto: str, ctx: dict | None = None) -> bool:
             message_id=ctx.get("message_id"),
             stage="crisis_check",
             stage_label="Chequeo de crisis",
-            stage_order=1,
+            stage_order=10,
             call_order=1,
             metadata={"purpose": "crisis_check", "incoming_text": ctx.get("incoming_text")},
         )
@@ -112,7 +112,7 @@ def detectar_crisis(texto: str, ctx: dict | None = None) -> bool:
                 message_id=ctx.get("message_id"),
                 stage="crisis_check",
                 stage_label="Chequeo de crisis",
-                stage_order=1,
+                stage_order=10,
                 call_order=1,
                 metadata={"purpose": "crisis_check", "incoming_text": ctx.get("incoming_text")},
             )
