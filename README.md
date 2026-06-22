@@ -41,8 +41,8 @@ python -m agente.cli        # REPL para probar el grafo
 uvicorn agente.app:app --reload
 ```
 
-`MODEL_*`, `HISTORY_WINDOW`, `HISTORY_COMPACT_LIMIT`, `HISTORY_OVERLAP` y las credenciales de
-Chatwoot/Calendly se configuran por variables de entorno (ver `.env.example`).
+`MODEL_*`, `AGENT_*`, `HISTORY_WINDOW`, `HISTORY_COMPACT_LIMIT`, `HISTORY_OVERLAP` y las
+credenciales de Chatwoot/Calendly se configuran por variables de entorno (ver `.env.example`).
 
 ## Docker / Coolify
 

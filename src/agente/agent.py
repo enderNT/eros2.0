@@ -19,6 +19,17 @@ log = logging.getLogger(__name__)
 _FALLBACK = "Estoy teniendo un problema técnico en este momento. ¿Quieres que te conecte con una persona del equipo?"
 
 
+def _agent_model_config() -> dict:
+    thinking = {"type": settings.agent_thinking_type}
+    if settings.agent_thinking_type != "disabled":
+        thinking["display"] = settings.agent_thinking_display
+    return {
+        "max_tokens": settings.agent_max_tokens,
+        "thinking": thinking,
+        "output_config": {"effort": settings.agent_effort},
+    }
+
+
 def _texto_de(content) -> str:
     """Concatena los bloques de texto de una respuesta del modelo."""
     return "".join(b.text for b in content if getattr(b, "type", None) == "text").strip()
@@ -55,14 +66,15 @@ def responder(historial: list, perfil: dict, ctx: dict, resumen_conversacion: st
     _log_envio(system_blocks, messages)
 
     for vuelta in range(settings.max_iteraciones):
+        agent_model_config = _agent_model_config()
         request_text = render_llm_request(system=system_blocks, messages=messages)
         try:
             resp = client.messages.create(
                 model=settings.model_agente,
-                max_tokens=1024,
                 system=system_blocks,
                 tools=TOOLS,
                 messages=messages,
+                **agent_model_config,
             )
         except Exception as e:  # noqa: BLE001
             log.error("responder: messages.create falló (vuelta %d): %s", vuelta, e)
@@ -80,7 +92,12 @@ def responder(historial: list, perfil: dict, ctx: dict, resumen_conversacion: st
                 stage_label="Generacion de respuesta",
                 stage_order=30,
                 call_order=vuelta + 1,
-                metadata={"purpose": "agent_loop", "iteration": vuelta, "incoming_text": ctx.get("incoming_text")},
+                metadata={
+                    "purpose": "agent_loop",
+                    "iteration": vuelta,
+                    "incoming_text": ctx.get("incoming_text"),
+                    "model_config": agent_model_config,
+                },
             )
             return _FALLBACK
 
@@ -97,7 +114,12 @@ def responder(historial: list, perfil: dict, ctx: dict, resumen_conversacion: st
             stage_label="Generacion de respuesta",
             stage_order=30,
             call_order=vuelta + 1,
-            metadata={"purpose": "agent_loop", "iteration": vuelta, "stop_reason": resp.stop_reason},
+            metadata={
+                "purpose": "agent_loop",
+                "iteration": vuelta,
+                "stop_reason": resp.stop_reason,
+                "model_config": agent_model_config,
+            },
         )
 
         if resp.stop_reason != "tool_use":

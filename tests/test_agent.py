@@ -57,6 +57,9 @@ def test_respuesta_directa_sin_tools(monkeypatch):
     out = A.responder(_hist(), {}, {})
     assert out == "¡Hola! ¿en qué te ayudo?"
     assert len(client.llamadas) == 1
+    assert client.llamadas[0]["thinking"] == {"type": "adaptive", "display": "omitted"}
+    assert client.llamadas[0]["output_config"] == {"effort": "high"}
+    assert client.llamadas[0]["max_tokens"] == A.settings.agent_max_tokens
 
 
 def test_loop_ejecuta_tool_y_luego_responde(monkeypatch):

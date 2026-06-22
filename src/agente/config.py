@@ -1,5 +1,7 @@
 """Configuración leída del entorno (.env / variables de Coolify)."""
 
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -44,6 +46,10 @@ class Settings(BaseSettings):
 
     # Loop del agente
     max_iteraciones: int = 6  # tope de vueltas tool-use → respuesta
+    agent_max_tokens: int = 4096
+    agent_thinking_type: Literal["adaptive", "disabled"] = "adaptive"
+    agent_thinking_display: Literal["omitted", "summarized"] = "omitted"
+    agent_effort: Literal["low", "medium", "high", "xhigh", "max"] = "high"
 
     log_level: str = "INFO"
 
