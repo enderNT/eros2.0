@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     wiki_path: str = "wiki.md"
     playbook_path: str = "playbook.md"
 
+    # Observabilidad LLM (Postgres). Si está vacío, el logger queda inactivo.
+    database_url: str = ""
+
     # Loop del agente
     max_iteraciones: int = 6  # tope de vueltas tool-use → respuesta
 

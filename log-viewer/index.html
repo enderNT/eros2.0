@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LLM Logbook</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">LLM Logbook</p>
+          <h1>Registro de llamadas</h1>
+        </div>
+        <div class="top-actions">
+          <span id="state" class="badge green">Listo</span>
+          <button id="refresh" class="button" type="button">Actualizar</button>
+        </div>
+      </header>
+
+      <section class="controls" aria-label="Filtros">
+        <label class="field search-field">
+          <span>Busqueda</span>
+          <input id="search" type="search" autocomplete="off" placeholder="texto, modelo, estado o conversacion">
+        </label>
+        <label class="field limit-field">
+          <span>Limite</span>
+          <select id="limit">
+            <option value="50">50</option>
+            <option value="100" selected>100</option>
+            <option value="250">250</option>
+            <option value="500">500</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="summary-row" aria-label="Resumen">
+        <article class="stat">
+          <span>Total listado</span>
+          <strong id="count">0</strong>
+        </article>
+        <article class="stat">
+          <span>Ultima llamada</span>
+          <strong id="latest">Sin datos</strong>
+        </article>
+        <article class="stat">
+          <span>Origen</span>
+          <strong>Postgres</strong>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <aside class="list-panel" aria-label="Listado general">
+          <div class="panel-head">
+            <h2>Listado general</h2>
+            <span id="db-state" class="badge blue">DB</span>
+          </div>
+          <div id="log-list" class="log-list"></div>
+        </aside>
+
+        <article class="detail-panel" aria-label="Detalle">
+          <div id="empty-detail" class="empty-detail">
+            <p>Selecciona una llamada para ver entrada y respuesta.</p>
+          </div>
+          <div id="detail" class="detail" hidden>
+            <div class="detail-head">
+              <div>
+                <p id="detail-meta" class="meta"></p>
+                <h2 id="detail-title"></h2>
+              </div>
+              <span id="detail-status" class="badge"></span>
+            </div>
+            <div class="text-grid">
+              <section class="text-pane">
+                <h3>Entrada textual</h3>
+                <pre id="request-text"></pre>
+              </section>
+              <section class="text-pane">
+                <h3>Respuesta textual</h3>
+                <pre id="response-text"></pre>
+              </section>
+            </div>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

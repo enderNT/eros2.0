@@ -52,6 +52,21 @@ docker build -t agente .
 docker run -p 8000:8000 --env-file .env -v agente_data:/data agente
 ```
 
+Para levantar el stack completo local con logger LLM:
+
+```bash
+docker compose up -d --build
+```
+
+- API: `http://127.0.0.1:8000`
+- Visor de llamadas LLM: `http://127.0.0.1:3101`
+- Postgres queda en el servicio `llm-logs-db`; el compose inyecta
+  `DATABASE_URL=postgresql://agente:agente@llm-logs-db:5432/agente_logs`.
+
+El logger persiste la entrada textual y la respuesta textual de cada llamada
+Anthropic (`messages.parse` y `messages.create`). Si `DATABASE_URL` está vacío,
+el logger queda inactivo y la app sigue funcionando sin Postgres.
+
 En **Coolify**:
 - Desplegar desde el `Dockerfile` (expone el puerto **8000**).
 - Montar un **volumen persistente en `/data`** — ahí vive el SQLite del

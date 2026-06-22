@@ -1,4 +1,20 @@
 services:
+  llm-logs-db:
+    image: postgres:16-alpine
+    container_name: eros-llm-logs-db
+    environment:
+      POSTGRES_DB: agente_logs
+      POSTGRES_USER: agente
+      POSTGRES_PASSWORD: agente
+    volumes:
+      - llm_logs_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agente -d agente_logs"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   app:
     build: .
     image: eros-neurona
@@ -7,6 +23,11 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      DATABASE_URL: postgresql://agente:agente@llm-logs-db:5432/agente_logs
+    depends_on:
+      llm-logs-db:
+        condition: service_healthy
     volumes:
       # Persiste la memoria corta (checkpoints.sqlite) y larga (store.sqlite)
       - eros_data:/data
@@ -14,5 +35,16 @@ services:
       # - ./wiki.md:/app/wiki.md:ro
     restart: unless-stopped
 
+  llm-log-viewer:
+    build: ./log-viewer
+    image: eros-llm-log-viewer
+    container_name: eros-llm-log-viewer
+    ports:
+      - "3101:80"
+    depends_on:
+      - app
+    restart: unless-stopped
+
 volumes:
   eros_data:
+  llm_logs_pgdata:

@@ -11,6 +11,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel
 
 from .config import settings
+from .llm_logger import get_llm_logger, render_llm_request, render_llm_response
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +68,10 @@ def detectar_crisis(texto: str) -> bool:
     if client is None:
         return _fallback_crisis(texto)
     try:
+        request_text = render_llm_request(
+            system=CRISIS_SYSTEM,
+            messages=[{"role": "user", "content": texto or ""}],
+        )
         resp = client.messages.parse(
             model=settings.model_crisis,
             max_tokens=128,
@@ -74,8 +79,26 @@ def detectar_crisis(texto: str) -> bool:
             messages=[{"role": "user", "content": texto or ""}],
             output_format=ChequeoCrisis,
         )
+        get_llm_logger().record(
+            provider="anthropic",
+            operation="messages.parse",
+            model=settings.model_crisis,
+            request_text=request_text,
+            response_text=render_llm_response(resp),
+            metadata={"purpose": "crisis_check"},
+        )
         out: Optional[ChequeoCrisis] = resp.parsed_output
         return out.crisis if out is not None else _fallback_crisis(texto)
     except Exception as e:  # noqa: BLE001
         log.warning("detectar_crisis falló, usando fallback: %s", e)
+        if "request_text" in locals():
+            get_llm_logger().record(
+                provider="anthropic",
+                operation="messages.parse",
+                model=settings.model_crisis,
+                request_text=request_text,
+                response_text=str(e),
+                status="error",
+                metadata={"purpose": "crisis_check"},
+            )
         return _fallback_crisis(texto)

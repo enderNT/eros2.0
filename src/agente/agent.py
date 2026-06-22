@@ -10,6 +10,7 @@ import logging
 
 from .config import settings
 from .llm import get_client
+from .llm_logger import get_llm_logger, render_llm_request, render_llm_response
 from .prompt import construir_system
 from .tools import TOOLS, ejecutar_tool
 
@@ -54,6 +55,7 @@ def responder(historial: list, perfil: dict, ctx: dict) -> str:
     _log_envio(system_blocks, messages)
 
     for vuelta in range(settings.max_iteraciones):
+        request_text = render_llm_request(system=system_blocks, messages=messages)
         try:
             resp = client.messages.create(
                 model=settings.model_agente,
@@ -64,7 +66,27 @@ def responder(historial: list, perfil: dict, ctx: dict) -> str:
             )
         except Exception as e:  # noqa: BLE001
             log.error("responder: messages.create falló (vuelta %d): %s", vuelta, e)
+            get_llm_logger().record(
+                provider="anthropic",
+                operation="messages.create",
+                model=settings.model_agente,
+                request_text=request_text,
+                response_text=str(e),
+                status="error",
+                conversation_id=ctx.get("conversation_id"),
+                metadata={"purpose": "agent_loop", "iteration": vuelta},
+            )
             return _FALLBACK
+
+        get_llm_logger().record(
+            provider="anthropic",
+            operation="messages.create",
+            model=settings.model_agente,
+            request_text=request_text,
+            response_text=render_llm_response(resp),
+            conversation_id=ctx.get("conversation_id"),
+            metadata={"purpose": "agent_loop", "iteration": vuelta, "stop_reason": resp.stop_reason},
+        )
 
         if resp.stop_reason != "tool_use":
             texto = _texto_de(resp.content)

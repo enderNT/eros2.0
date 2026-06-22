@@ -18,6 +18,7 @@ from .agent import responder
 from .chatwoot import get_chatwoot
 from .config import settings
 from .llm import detectar_crisis
+from .llm_logger import get_llm_logger
 from .store import get_store
 from .webhook import parse_evento
 
@@ -30,6 +31,14 @@ app = FastAPI(title="Agente Clínica")
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/debug/llm-logs")
+def llm_logs(limit: int = 100, q: str = ""):
+    return {
+        "enabled": get_llm_logger().enabled,
+        "logs": get_llm_logger().list_calls(limit, q),
+    }
 
 
 def _enviar(conversation_id, texto: str) -> None:

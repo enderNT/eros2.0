@@ -1,0 +1,369 @@
+:root {
+  --canvas: #f7f6f3;
+  --surface: #ffffff;
+  --surface-soft: #fbfbfa;
+  --ink: #111111;
+  --text: #2f3437;
+  --muted: #787774;
+  --border: #eaeaea;
+  --blue-bg: #e1f3fe;
+  --blue-text: #1f6c9f;
+  --green-bg: #edf3ec;
+  --green-text: #346538;
+  --red-bg: #fdebec;
+  --red-text: #9f2f2d;
+  --yellow-bg: #fbf3db;
+  --yellow-text: #956400;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+html {
+  min-width: 320px;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  background: var(--canvas);
+  font-family: "SF Pro Display", "Geist Sans", "Helvetica Neue", "Switzer", sans-serif;
+  line-height: 1.5;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.app-shell {
+  width: min(1440px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 28px 0 40px;
+}
+
+.topbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+}
+
+.eyebrow,
+.meta,
+.field span,
+.stat span,
+h3 {
+  margin: 0;
+  color: var(--muted);
+  font-family: "Geist Mono", "SF Mono", "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 2px 0 0;
+  color: var(--ink);
+  font-family: "Lyon Text", "Newsreader", "Playfair Display", "Instrument Serif", serif;
+  font-size: 42px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+h3 {
+  margin-bottom: 10px;
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 6px;
+  color: #ffffff;
+  background: #111111;
+  cursor: pointer;
+  transition: background 180ms ease, transform 180ms ease;
+}
+
+.button:hover {
+  background: #333333;
+}
+
+.button:active {
+  transform: scale(0.98);
+}
+
+.button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 9999px;
+  font-family: "Geist Mono", "SF Mono", "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.blue {
+  color: var(--blue-text);
+  background: var(--blue-bg);
+}
+
+.green,
+.ok {
+  color: var(--green-text);
+  background: var(--green-bg);
+}
+
+.error {
+  color: var(--red-text);
+  background: var(--red-bg);
+}
+
+.disabled {
+  color: var(--yellow-text);
+  background: var(--yellow-bg);
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 16px;
+  border: 1px solid #eaeaea;
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.field {
+  display: grid;
+  gap: 7px;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid #eaeaea;
+  border-radius: 6px;
+  color: var(--ink);
+  background: #ffffff;
+  outline: none;
+}
+
+.field input:focus,
+.field select:focus {
+  border-color: rgba(17, 17, 17, 0.32);
+}
+
+.summary-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.stat {
+  min-height: 78px;
+  padding: 16px;
+  border: 1px solid #eaeaea;
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.stat strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(300px, 390px) minmax(0, 1fr);
+  min-height: calc(100vh - 260px);
+  gap: 12px;
+}
+
+.list-panel,
+.detail-panel {
+  border: 1px solid #eaeaea;
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.panel-head,
+.detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border-bottom: 1px solid #eaeaea;
+}
+
+.log-list {
+  max-height: calc(100vh - 292px);
+  overflow: auto;
+}
+
+.log-item {
+  display: grid;
+  width: 100%;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 0;
+  border-bottom: 1px solid #eaeaea;
+  color: inherit;
+  background: #ffffff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.log-item:hover,
+.log-item.active {
+  background: var(--surface-soft);
+}
+
+.log-item-title {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.log-item-preview {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.detail-panel {
+  min-width: 0;
+}
+
+.detail-head {
+  align-items: center;
+}
+
+#detail-title {
+  margin-top: 4px;
+  font-size: 20px;
+  overflow-wrap: anywhere;
+}
+
+.empty-detail {
+  display: grid;
+  min-height: 420px;
+  place-items: center;
+  padding: 32px;
+}
+
+.empty-detail p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.text-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 16px;
+}
+
+.text-pane {
+  min-width: 0;
+}
+
+pre {
+  min-height: calc(100vh - 382px);
+  max-height: calc(100vh - 382px);
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid #eaeaea;
+  border-radius: 8px;
+  color: #2f3437;
+  background: var(--surface-soft);
+  font-family: "Geist Mono", "SF Mono", "JetBrains Mono", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.empty-list {
+  padding: 22px 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (max-width: 980px) {
+  .app-shell {
+    width: min(100% - 24px, 1440px);
+    padding-top: 20px;
+  }
+
+  .topbar,
+  .detail-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .controls,
+  .summary-row,
+  .workspace,
+  .text-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .log-list,
+  pre {
+    max-height: none;
+  }
+
+  pre {
+    min-height: 240px;
+  }
+}
