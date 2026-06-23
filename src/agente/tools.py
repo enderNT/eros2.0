@@ -172,6 +172,7 @@ def _ver_horarios(args: dict, ctx: dict) -> str:
             settings.calendly_event_type,
             ahora.strftime("%Y-%m-%dT%H:%M:%SZ"),
             (ahora + timedelta(days=dias)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            ctx=ctx,
         )
     except Exception as e:  # noqa: BLE001
         log.warning("ver_horarios falló: %s", e)
@@ -186,7 +187,7 @@ def _agendar_cita(args: dict, ctx: dict) -> str:
         return json.dumps({"status": "error", "detalle": "agenda no configurada"})
 
     res = None
-    for _ in range(2):  # un reintento ante error técnico transitorio
+    for intento in range(2):  # un reintento ante error técnico transitorio
         res = cal.crear_invitee(
             event_type=settings.calendly_event_type,
             start_time=args["slot"],
@@ -195,6 +196,8 @@ def _agendar_cita(args: dict, ctx: dict) -> str:
             timezone=settings.calendly_timezone,
             location_kind=settings.calendly_location_kind,
             asunto=args.get("asunto"),
+            ctx=ctx,
+            call_order=intento + 1,
         )
         if res.status != "error":
             break
@@ -210,7 +213,7 @@ def _agendar_cita(args: dict, ctx: dict) -> str:
         message_id=ctx.get("message_id"),
         stage="agendar_cita",
         stage_label="Agendamiento de cita",
-        stage_order=33,
+        stage_order=34,
         call_order=1,
         request_text=render_data_text(
             {

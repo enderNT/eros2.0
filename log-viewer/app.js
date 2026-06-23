@@ -250,6 +250,10 @@ function callKind(call) {
   return "llm";
 }
 
+function isCalendlyHttpCall(call) {
+  return call.provider === "calendly" && call.metadata?.calendly_http === true;
+}
+
 function kindLabel(kind) {
   return {
     haiku: "LLM · Haiku",
@@ -391,6 +395,16 @@ function renderCall(call, callIndex) {
   card.className = `call-card kind-${kind}`;
   card.dataset.open = String(isOpen);
   const key = `call-${call.id}`;
+  const tabs = isCalendlyHttpCall(call)
+    ? [
+        { id: "semantic", label: call.metadata?.semantic_tab_label || "Semantico", title: "Semantico", text: call.request_text },
+        { id: "input", label: "Input", title: "Input", text: call.metadata?.request_body_text || "{}" },
+        { id: "output", label: "Output", title: "Output", text: call.response_text },
+      ]
+    : [
+        { id: "input", label: "Input", title: "Input", text: call.request_text },
+        { id: "output", label: "Output", title: "Output", text: call.response_text },
+      ];
   card.innerHTML = `
     <button class="call-toggle" type="button" aria-expanded="${isOpen}">
       <span class="call-symbol">${isOpen ? "-" : "+"}</span>
@@ -404,19 +418,31 @@ function renderCall(call, callIndex) {
       </span>
     </button>
     <div class="call-body" ${isOpen ? "" : "hidden"}>
-      <div class="tabs" role="tablist">
-        <button class="tab-button active" type="button" data-tab="${key}-input">Input</button>
-        <button class="tab-button" type="button" data-tab="${key}-output">Output</button>
-      </div>
-      <div class="tab-panel" data-panel="${key}-input"></div>
-      <div class="tab-panel" data-panel="${key}-output" hidden></div>
+      <div class="tabs" role="tablist"></div>
+      <div class="tab-panels"></div>
     </div>
   `;
   card.querySelector(".call-title strong").textContent = call.model
     ? `${call.operation} · ${call.model}`
     : call.operation;
-  renderContentPanel(card.querySelector(`[data-panel="${key}-input"]`), "Input", call.request_text);
-  renderContentPanel(card.querySelector(`[data-panel="${key}-output"]`), "Output", call.response_text);
+  const tabsEl = card.querySelector(".tabs");
+  const panelsEl = card.querySelector(".tab-panels");
+  tabs.forEach((tab, index) => {
+    const tabId = `${key}-${tab.id}`;
+    const button = document.createElement("button");
+    button.className = `tab-button ${index === 0 ? "active" : ""}`;
+    button.type = "button";
+    button.dataset.tab = tabId;
+    button.textContent = tab.label;
+    tabsEl.append(button);
+
+    const panel = document.createElement("div");
+    panel.className = "tab-panel";
+    panel.dataset.panel = tabId;
+    panel.hidden = index !== 0;
+    renderContentPanel(panel, tab.title, tab.text);
+    panelsEl.append(panel);
+  });
   card.querySelectorAll(".tab-button").forEach((button) => {
     button.addEventListener("click", () => activateTab(card, button.dataset.tab));
   });

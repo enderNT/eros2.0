@@ -114,7 +114,7 @@ def test_agendar_sin_calendly(monkeypatch):
 
 def test_ver_horarios_lista(monkeypatch):
     class Cal:
-        def available_times(self, ev, start, end):
+        def available_times(self, ev, start, end, ctx=None):
             return [{"start_time": "2026-07-01T18:00:00Z"}, {"start_time": "2026-07-02T19:00:00Z"}]
 
     monkeypatch.setattr(T, "get_calendly", lambda: Cal())

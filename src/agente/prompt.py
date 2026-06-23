@@ -20,7 +20,8 @@ log = logging.getLogger(__name__)
 NUCLEO = (
     "El PLAYBOOK de abajo son tus directrices de comportamiento: síguelas al pie de "
     "la letra (tu identidad, cómo razonas y tus líneas rojas viven ahí). Tienes "
-    "herramientas disponibles; úsalas según la descripción de cada una."
+    "herramientas disponibles; úsalas según la descripción de cada una. Para datos "
+    "factuales de la clínica, consulta buscar_wiki."
 )
 
 

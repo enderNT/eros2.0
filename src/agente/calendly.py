@@ -9,15 +9,18 @@ import hmac
 import logging
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 
 from .config import settings
+from .llm_logger import get_llm_logger, render_data_text
 
 log = logging.getLogger(__name__)
 
 BASE_URL = "https://api.calendly.com"
+
+_REDACTED_HEADERS = {"authorization", "cookie", "set-cookie"}
 
 
 @dataclass
@@ -60,11 +63,111 @@ class CalendlyClient:
             timeout=15.0,
         )
 
-    def available_times(self, event_type: str, start: str, end: str) -> list[dict]:
+    def _headers(self, headers: httpx.Headers) -> dict[str, str]:
+        return {
+            key: ("***" if key.lower() in _REDACTED_HEADERS else value)
+            for key, value in headers.items()
+        }
+
+    def _response_payload(self, response: httpx.Response) -> Any:
+        try:
+            return response.json()
+        except Exception:  # noqa: BLE001
+            return response.text
+
+    def _log_http(
+        self,
+        *,
+        operation: str,
+        stage: str,
+        stage_label: str,
+        stage_order: int,
+        call_order: int,
+        ctx: dict | None,
+        response: httpx.Response | None = None,
+        error: Exception | None = None,
+        request_body: Any = None,
+    ) -> None:
+        if not ctx:
+            return
+        request = response.request if response is not None else None
+        url = str(request.url) if request is not None else ""
+        method = request.method if request is not None else operation.split(".")[-1].upper()
+        headers = self._headers(request.headers) if request is not None else {}
+        body = request_body if request_body is not None else {}
+        semantic_request = {
+            "method": method,
+            "url": url,
+            "headers": headers,
+            "query": dict(request.url.params) if request is not None else {},
+            "body": body,
+        }
+
+        if response is not None:
+            response_body = self._response_payload(response)
+            response_text = render_data_text(
+                {
+                    "status_code": response.status_code,
+                    "reason": response.reason_phrase,
+                    "body": response_body,
+                }
+            )
+            status = "ok" if response.status_code < 400 else "error"
+        else:
+            response_text = render_data_text({"error": str(error)})
+            status = "error"
+
+        get_llm_logger().record(
+            provider="calendly",
+            operation=operation,
+            model=None,
+            status=status,
+            conversation_id=ctx.get("conversation_id"),
+            flow_id=ctx.get("flow_id"),
+            message_id=ctx.get("message_id"),
+            stage=stage,
+            stage_label=stage_label,
+            stage_order=stage_order,
+            call_order=call_order,
+            request_text=render_data_text(semantic_request),
+            response_text=response_text,
+            metadata={
+                "purpose": "calendly.http",
+                "calendly_http": True,
+                "semantic_tab_label": "Semantico",
+                "request_body_text": render_data_text(body),
+                "http_method": method,
+                "http_url": url,
+                "http_status_code": response.status_code if response is not None else None,
+            },
+        )
+
+    def available_times(self, event_type: str, start: str, end: str, ctx: dict | None = None) -> list[dict]:
         """Horarios disponibles. La API limita a 7 días por request."""
-        r = self._http.get(
-            "/event_type_available_times",
-            params={"event_type": event_type, "start_time": start, "end_time": end},
+        params = {"event_type": event_type, "start_time": start, "end_time": end}
+        try:
+            r = self._http.get("/event_type_available_times", params=params)
+        except Exception as e:  # noqa: BLE001
+            self._log_http(
+                operation="calendly.available_times",
+                stage="calendly_available_times",
+                stage_label="Calendly · consultar horarios",
+                stage_order=32,
+                call_order=1,
+                ctx=ctx,
+                error=e,
+                request_body={},
+            )
+            raise
+        self._log_http(
+            operation="calendly.available_times",
+            stage="calendly_available_times",
+            stage_label="Calendly · consultar horarios",
+            stage_order=32,
+            call_order=1,
+            ctx=ctx,
+            response=r,
+            request_body={},
         )
         r.raise_for_status()
         return r.json().get("collection", [])
@@ -79,6 +182,8 @@ class CalendlyClient:
         timezone: str,
         location_kind: str,
         asunto: Optional[str] = None,
+        ctx: dict | None = None,
+        call_order: int = 1,
     ) -> ResultadoReserva:
         """POST /invitees. Mapea: 2xx→ok, 409/422→slot_taken, otro→error.
 
@@ -96,7 +201,30 @@ class CalendlyClient:
                 {"question": "asunto", "answer": asunto, "position": 0}
             ]
 
-        r = self._http.post("/invitees", json=payload)
+        try:
+            r = self._http.post("/invitees", json=payload)
+        except Exception as e:  # noqa: BLE001
+            self._log_http(
+                operation="calendly.create_invitee",
+                stage="calendly_create_invitee",
+                stage_label="Calendly · crear invitee",
+                stage_order=33,
+                call_order=call_order,
+                ctx=ctx,
+                error=e,
+                request_body=payload,
+            )
+            raise
+        self._log_http(
+            operation="calendly.create_invitee",
+            stage="calendly_create_invitee",
+            stage_label="Calendly · crear invitee",
+            stage_order=33,
+            call_order=call_order,
+            ctx=ctx,
+            response=r,
+            request_body=payload,
+        )
         if r.is_success:
             res = r.json().get("resource", {})
             return ResultadoReserva(
