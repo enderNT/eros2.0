@@ -167,10 +167,15 @@ def _ver_horarios(args: dict, ctx: dict) -> str:
         return json.dumps({"error": "agenda no configurada", "horarios": []})
     dias = min(int(args.get("dias", 7) or 7), 7)
     ahora = datetime.now(_tz.utc)
+    # Calendly exige start_time estrictamente futuro y lo evalúa contra SU reloj:
+    # si mandamos "ahora" exacto, con la latencia/desfase ya es pasado al llegar
+    # (400 "start_time must be in the future"). Colchón para cubrirlo. El end se
+    # ancla a `ahora` para que la ventana quede por debajo del tope de 7 días.
+    inicio = ahora + timedelta(minutes=2)
     try:
         slots = cal.available_times(
             settings.calendly_event_type,
-            ahora.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            inicio.strftime("%Y-%m-%dT%H:%M:%SZ"),
             (ahora + timedelta(days=dias)).strftime("%Y-%m-%dT%H:%M:%SZ"),
             ctx=ctx,
         )
