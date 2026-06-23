@@ -59,6 +59,15 @@ def test_crear_invitee_error():
     assert _client(h).crear_invitee(**_DATOS).status == "error"
 
 
+def test_crear_invitee_400_es_peticion_no_utilizable():
+    def h(req):
+        return httpx.Response(400, json={"message": "The supplied parameters are invalid."})
+
+    res = _client(h).crear_invitee(**_DATOS)
+    assert res.status == "slot_taken"
+    assert "invalid" in res.detail
+
+
 def test_available_times_envia_params():
     captura = {}
 
@@ -98,11 +107,10 @@ def test_crear_invitee_registra_http_semantico(monkeypatch):
     assert registro["flow_id"] == "f1"
     assert registro["metadata"]["calendly_http"] is True
 
-    semantico = json.loads(registro["request_text"])
-    assert semantico["method"] == "POST"
-    assert semantico["url"].endswith("/invitees")
-    assert semantico["headers"]["authorization"] == "***"
-    assert semantico["body"]["start_time"] == _DATOS["start_time"]
+    traza = registro["request_text"]
+    assert "Calendly POST https://api.calendly.com/invitees" in traza
+    assert '"authorization": "***"' in traza
+    assert _DATOS["start_time"] in traza
 
     body = json.loads(registro["metadata"]["request_body_text"])
     assert body["invitee"]["email"] == _DATOS["correo"]
@@ -131,3 +139,27 @@ def test_crear_invitee_http_error_se_marca_error(monkeypatch):
     output = json.loads(registros[0]["response_text"])
     assert output["status_code"] == 422
     assert output["body"]["message"] == "slot unavailable"
+
+
+def test_crear_invitee_start_time_pasado_no_llama_calendly(monkeypatch):
+    registros = []
+
+    class Logger:
+        def record(self, **kwargs):
+            registros.append(kwargs)
+
+    monkeypatch.setattr(C, "get_llm_logger", lambda: Logger())
+
+    def h(req):
+        raise AssertionError("no debe llamar Calendly con start_time pasado")
+
+    datos = {**_DATOS, "start_time": "2000-01-01T18:00:00Z"}
+    res = _client(h).crear_invitee(**datos, ctx={"flow_id": "f1"})
+
+    assert res.status == "slot_taken"
+    assert "futuro" in res.detail
+    assert registros[0]["operation"] == "calendly.create_invitee.preflight"
+    assert registros[0]["status"] == "error"
+    assert registros[0]["metadata"]["calendly_trace"] is True
+    body = json.loads(registros[0]["metadata"]["request_body_text"])
+    assert body["start_time"] == "2000-01-01T18:00:00Z"

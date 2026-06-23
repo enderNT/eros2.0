@@ -6,8 +6,11 @@ V3: solo un 2xx de crear_invitee cuenta como reserva confirmada.
 
 import hashlib
 import hmac
+import json
 import logging
 from dataclasses import dataclass
+from datetime import datetime
+from datetime import timezone as _timezone
 from functools import lru_cache
 from typing import Any, Optional
 
@@ -21,6 +24,13 @@ log = logging.getLogger(__name__)
 BASE_URL = "https://api.calendly.com"
 
 _REDACTED_HEADERS = {"authorization", "cookie", "set-cookie"}
+
+
+def _utc_dt(value: str) -> datetime:
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=_timezone.utc)
+    return dt.astimezone(_timezone.utc)
 
 
 @dataclass
@@ -75,6 +85,18 @@ class CalendlyClient:
         except Exception:  # noqa: BLE001
             return response.text
 
+    def _semantic_text(self, *, method: str, url: str, headers: dict, query: dict, body: Any) -> str:
+        return "\n".join(
+            [
+                f"Calendly {method} {url}",
+                "",
+                f"Headers: {json.dumps(headers, ensure_ascii=False, sort_keys=True)}",
+                f"Query: {json.dumps(query, ensure_ascii=False, sort_keys=True)}",
+                "Body:",
+                json.dumps(body or {}, ensure_ascii=False, indent=2, sort_keys=True),
+            ]
+        )
+
     def _log_http(
         self,
         *,
@@ -102,6 +124,7 @@ class CalendlyClient:
             "query": dict(request.url.params) if request is not None else {},
             "body": body,
         }
+        semantic_text = self._semantic_text(**semantic_request)
 
         if response is not None:
             response_body = self._response_payload(response)
@@ -129,16 +152,60 @@ class CalendlyClient:
             stage_label=stage_label,
             stage_order=stage_order,
             call_order=call_order,
-            request_text=render_data_text(semantic_request),
+            request_text=semantic_text,
             response_text=response_text,
             metadata={
                 "purpose": "calendly.http",
                 "calendly_http": True,
-                "semantic_tab_label": "Semantico",
+                "semantic_tab_label": "Traza",
                 "request_body_text": render_data_text(body),
                 "http_method": method,
                 "http_url": url,
                 "http_status_code": response.status_code if response is not None else None,
+            },
+        )
+
+    def _log_preflight_rejected(
+        self,
+        *,
+        ctx: dict | None,
+        payload: dict,
+        detail: str,
+        call_order: int,
+    ) -> None:
+        if not ctx:
+            return
+        url = f"{BASE_URL}/invitees"
+        headers = self._headers(self._http.headers)
+        request_text = self._semantic_text(method="POST", url=url, headers=headers, query={}, body=payload)
+        get_llm_logger().record(
+            provider="calendly",
+            operation="calendly.create_invitee.preflight",
+            model=None,
+            status="error",
+            conversation_id=ctx.get("conversation_id"),
+            flow_id=ctx.get("flow_id"),
+            message_id=ctx.get("message_id"),
+            stage="calendly_create_invitee",
+            stage_label="Calendly · crear invitee",
+            stage_order=33,
+            call_order=call_order,
+            request_text=request_text,
+            response_text=render_data_text(
+                {
+                    "status_code": None,
+                    "reason": "Preflight rejected",
+                    "body": {"message": detail},
+                }
+            ),
+            metadata={
+                "purpose": "calendly.preflight",
+                "calendly_trace": True,
+                "semantic_tab_label": "Traza",
+                "request_body_text": render_data_text(payload),
+                "http_method": "POST",
+                "http_url": url,
+                "http_status_code": None,
             },
         )
 
@@ -202,6 +269,17 @@ class CalendlyClient:
             ]
 
         try:
+            slot_dt = _utc_dt(start_time)
+        except ValueError:
+            detail = "start_time debe ser ISO 8601 UTC, por ejemplo 2026-07-01T18:00:00Z"
+            self._log_preflight_rejected(ctx=ctx, payload=payload, detail=detail, call_order=call_order)
+            return ResultadoReserva("slot_taken", detail=detail)
+        if slot_dt <= datetime.now(_timezone.utc):
+            detail = "start_time debe estar en el futuro; vuelve a consultar horarios disponibles."
+            self._log_preflight_rejected(ctx=ctx, payload=payload, detail=detail, call_order=call_order)
+            return ResultadoReserva("slot_taken", detail=detail)
+
+        try:
             r = self._http.post("/invitees", json=payload)
         except Exception as e:  # noqa: BLE001
             self._log_http(
@@ -234,7 +312,7 @@ class CalendlyClient:
                 invitee_uri=res.get("uri"),
                 event_uri=res.get("event"),
             )
-        if r.status_code in (409, 422):
+        if r.status_code in (400, 409, 422):
             return ResultadoReserva("slot_taken", detail=r.text)
         return ResultadoReserva("error", detail=f"{r.status_code} {r.text}")
 

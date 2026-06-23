@@ -303,7 +303,7 @@ def _agendar_cita(args: dict, ctx: dict) -> str:
         _encolar_recordatorios(res, args, ctx)
         return json.dumps({"status": "ok", "slot": args["slot"]})
     if res.status == "slot_taken":
-        return json.dumps({"status": "slot_taken", "detalle": "ese horario se ocupó"})
+        return json.dumps({"status": "slot_taken", "detalle": res.detail[:200] or "ese horario se ocupó"})
     return json.dumps({"status": "error", "detalle": res.detail[:200]})
 
 

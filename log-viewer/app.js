@@ -251,7 +251,7 @@ function callKind(call) {
 }
 
 function isCalendlyHttpCall(call) {
-  return call.provider === "calendly" && call.metadata?.calendly_http === true;
+  return call.provider === "calendly" && (call.metadata?.calendly_http === true || call.metadata?.calendly_trace === true);
 }
 
 function kindLabel(kind) {
@@ -397,7 +397,7 @@ function renderCall(call, callIndex) {
   const key = `call-${call.id}`;
   const tabs = isCalendlyHttpCall(call)
     ? [
-        { id: "semantic", label: call.metadata?.semantic_tab_label || "Semantico", title: "Semantico", text: call.request_text },
+        { id: "semantic", label: call.metadata?.semantic_tab_label || "Traza", title: "Traza", text: call.request_text },
         { id: "input", label: "Input", title: "Input", text: call.metadata?.request_body_text || "{}" },
         { id: "output", label: "Output", title: "Output", text: call.response_text },
       ]
