@@ -433,6 +433,14 @@ def _stage_label(stage: str, model: str | None) -> str:
         return "Persistencia de resumen"
     if stage == "agent_response":
         return "Generacion de respuesta"
+    if stage == "agendar_cita":
+        return "Agendamiento de cita"
+    if stage == "recordatorio_encolado":
+        return "Recordatorios programados"
+    if stage == "recordatorio_encontrado":
+        return "Recordatorio encontrado"
+    if stage == "recordatorio_envio":
+        return "Envío por Chatwoot"
     if model:
         return f"Llamada LLM {model}"
     return "Llamada LLM"

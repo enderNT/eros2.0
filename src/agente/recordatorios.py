@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 
 from .chatwoot import get_chatwoot
 from .config import settings
+from .llm_logger import get_llm_logger, render_data_text
 from .store import get_store
 
 log = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ log = logging.getLogger(__name__)
 # --- Plantilla WhatsApp (fija, no en env) ------------------------------------
 # Plantilla aprobada: dos variables posicionales → {{1}}=nombre, {{2}}=date_day.
 TEMPLATE_NOMBRE = "saludos_confirmar_cita"
-TEMPLATE_IDIOMA = "es"  # si tu plantilla quedó como es_MX/es_ES, ajústalo aquí
+TEMPLATE_IDIOMA = "es_MX"  # si tu plantilla quedó como es_MX/es_ES, ajústalo aquí
 # WhatsApp rechaza variables vacías o solo-espacios; si no hay nombre, mandamos esto.
 NOMBRE_FALLBACK = "👋"
 
@@ -84,20 +85,97 @@ def despachar_due(limite: int = 20) -> int:
 
     store = get_store()
     pendientes = store.reclamar_recordatorios_vencidos(limite)
+    logger = get_llm_logger()
     enviados = 0
     for r in pendientes:
+        # Cada recordatorio es un flujo aparte, rastreable en el mismo listado/tabla.
+        flow_id = f"recordatorio:{r['id']}"
+        params = construir_params(r["nombre"], r["slot"])
+        fallback = _fallback(r["nombre"], r["slot"])
+        slot_iso = r["slot"].isoformat() if hasattr(r["slot"], "isoformat") else str(r["slot"])
+
+        # Etapa 1: el recordatorio fue encontrado/reclamado para envío.
+        logger.record(
+            provider="recordatorio",
+            operation="recordatorio.encontrado",
+            model=None,
+            status="ok",
+            conversation_id=r["conversation_id"],
+            flow_id=flow_id,
+            stage="recordatorio_encontrado",
+            stage_label="Recordatorio encontrado",
+            stage_order=10,
+            call_order=1,
+            request_text=render_data_text(
+                {
+                    "recordatorio_id": r["id"],
+                    "conversation_id": r["conversation_id"],
+                    "nombre": r["nombre"],
+                    "cita": slot_iso,
+                    "lead_minutes": r["lead_minutes"],
+                }
+            ),
+            response_text=render_data_text(
+                {
+                    "estado": "reclamado para envío",
+                    "plantilla": TEMPLATE_NOMBRE,
+                    "idioma": TEMPLATE_IDIOMA,
+                    "variables": params,
+                }
+            ),
+            metadata={"purpose": "recordatorio", "etapa": "encontrado"},
+        )
+
+        # Etapa 2: envío por Chatwoot (plantilla WhatsApp).
+        req = {
+            "conversation_id": r["conversation_id"],
+            "plantilla": TEMPLATE_NOMBRE,
+            "idioma": TEMPLATE_IDIOMA,
+            "processed_params": params,
+            "fallback": fallback,
+        }
         try:
-            cw.enviar_plantilla(
+            resp = cw.enviar_plantilla(
                 r["conversation_id"],
                 nombre_plantilla=TEMPLATE_NOMBRE,
                 idioma=TEMPLATE_IDIOMA,
-                processed_params=construir_params(r["nombre"], r["slot"]),
-                fallback=_fallback(r["nombre"], r["slot"]),
+                processed_params=params,
+                fallback=fallback,
             )
             store.marcar_recordatorio_enviado(r["id"])
             enviados += 1
             log.info("recordatorio %s enviado (conv=%s)", r["id"], r["conversation_id"])
+            logger.record(
+                provider="recordatorio",
+                operation="recordatorio.envio",
+                model=None,
+                status="ok",
+                conversation_id=r["conversation_id"],
+                flow_id=flow_id,
+                stage="recordatorio_envio",
+                stage_label="Envío por Chatwoot",
+                stage_order=20,
+                call_order=1,
+                request_text=render_data_text(req),
+                response_text=render_data_text(resp),
+                metadata={"purpose": "recordatorio", "etapa": "envio"},
+            )
         except Exception as e:  # noqa: BLE001
             log.error("recordatorio %s falló: %s", r["id"], e)
             store.marcar_recordatorio_fallido(r["id"], str(e))
+            logger.record(
+                provider="recordatorio",
+                operation="recordatorio.envio",
+                model=None,
+                status="error",
+                conversation_id=r["conversation_id"],
+                flow_id=flow_id,
+                stage="recordatorio_envio",
+                stage_label="Envío por Chatwoot",
+                stage_order=20,
+                call_order=1,
+                request_text=render_data_text(req),
+                response_text=str(e),
+                metadata={"purpose": "recordatorio", "etapa": "envio"},
+            )
     return enviados

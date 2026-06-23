@@ -240,6 +240,8 @@ function renderJsonNode(value, key = "", raw = "", root = false) {
 function callKind(call) {
   if (call.status === "error") return "error";
   if (call.provider === "memory") return "memory";
+  if (call.provider === "calendly") return "agenda";
+  if (call.provider === "recordatorio") return "recordatorio";
   const text = `${call.provider || ""} ${call.model || ""} ${call.operation || ""}`.toLowerCase();
   if (!text.includes("anthropic") && !call.model) return "neutral";
   if (text.includes("haiku")) return "haiku";
@@ -255,6 +257,8 @@ function kindLabel(kind) {
     opus: "LLM · Opus",
     llm: "LLM",
     memory: "Memoria",
+    agenda: "Agendamiento",
+    recordatorio: "Recordatorio",
     error: "Error",
     neutral: "Evento",
   }[kind] || "Evento";
@@ -264,7 +268,12 @@ function stageKind(stage) {
   const kinds = stage.calls.map(callKind);
   if (kinds.includes("error")) return "error";
   const llmKinds = kinds.filter((kind) => ["haiku", "sonnet", "opus", "llm"].includes(kind));
-  if (!llmKinds.length) return kinds.includes("memory") ? "memory" : "neutral";
+  if (!llmKinds.length) {
+    if (kinds.includes("recordatorio")) return "recordatorio";
+    if (kinds.includes("agenda")) return "agenda";
+    if (kinds.includes("memory")) return "memory";
+    return "neutral";
+  }
   if (llmKinds.includes("sonnet")) return "sonnet";
   if (llmKinds.includes("opus")) return "opus";
   if (llmKinds.includes("haiku")) return "haiku";

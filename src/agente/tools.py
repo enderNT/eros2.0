@@ -199,6 +199,44 @@ def _agendar_cita(args: dict, ctx: dict) -> str:
         if res.status != "error":
             break
 
+    # Log del agendado: input = lo que se manda a Calendly, output = resultado real.
+    get_llm_logger().record(
+        provider="calendly",
+        operation="tool.agendar_cita",
+        model=None,
+        status="ok" if res.status == "ok" else "error",
+        conversation_id=ctx.get("conversation_id"),
+        flow_id=ctx.get("flow_id"),
+        message_id=ctx.get("message_id"),
+        stage="agendar_cita",
+        stage_label="Agendamiento de cita",
+        stage_order=33,
+        call_order=1,
+        request_text=render_data_text(
+            {
+                "event_type": settings.calendly_event_type,
+                "slot": args.get("slot"),
+                "nombre": args.get("nombre"),
+                "correo": args.get("correo"),
+                "asunto": args.get("asunto"),
+                "timezone": settings.calendly_timezone,
+                "location_kind": settings.calendly_location_kind,
+            }
+        ),
+        response_text=render_data_text(
+            {
+                "status": res.status,
+                "slot": args.get("slot"),
+                "invitee_uri": getattr(res, "invitee_uri", None),
+                "event_uri": getattr(res, "event_uri", None),
+                "cancel_url": getattr(res, "cancel_url", None),
+                "reschedule_url": getattr(res, "reschedule_url", None),
+                "detalle": (getattr(res, "detail", "") or None) and res.detail[:300],
+            }
+        ),
+        metadata={"purpose": "tool", "tool": "agendar_cita"},
+    )
+
     if res.status == "ok":
         # Memoria larga determinista: +1 cita para este usuario.
         user_id = ctx.get("user_id")
@@ -280,6 +318,7 @@ def _encolar_recordatorios(res, args: dict, ctx: dict) -> None:
         from .recordatorios import leads_minutes
 
         slot_dt = datetime.fromisoformat(args["slot"].replace("Z", "+00:00"))
+        leads = leads_minutes()
         n = get_store().crear_recordatorios(
             invitee_uri=getattr(res, "invitee_uri", None),
             event_uri=getattr(res, "event_uri", None),
@@ -288,9 +327,34 @@ def _encolar_recordatorios(res, args: dict, ctx: dict) -> None:
             nombre=args.get("nombre"),
             correo=args.get("correo"),
             slot=slot_dt,
-            leads_minutes=leads_minutes(),
+            leads_minutes=leads,
         )
         log.info("recordatorios encolados: %s (conv=%s)", n, conv)
+        get_llm_logger().record(
+            provider="recordatorio",
+            operation="recordatorio.encolar",
+            model=None,
+            status="ok",
+            conversation_id=conv,
+            flow_id=ctx.get("flow_id"),
+            message_id=ctx.get("message_id"),
+            stage="recordatorio_encolado",
+            stage_label="Recordatorios programados",
+            stage_order=37,
+            call_order=1,
+            request_text=render_data_text(
+                {
+                    "conversation_id": conv,
+                    "nombre": args.get("nombre"),
+                    "correo": args.get("correo"),
+                    "cita": args.get("slot"),
+                    "invitee_uri": getattr(res, "invitee_uri", None),
+                    "leads_minutes": leads,
+                }
+            ),
+            response_text=render_data_text({"recordatorios_insertados": n}),
+            metadata={"purpose": "recordatorio", "etapa": "encolado"},
+        )
     except Exception as e:  # noqa: BLE001
         log.warning("encolar recordatorios falló: %s", e)
 

@@ -191,6 +191,16 @@ h3 {
   border: 1px solid var(--border);
 }
 
+.badge-kind.agenda {
+  color: #7a5cc0;
+  background: #f5f1fc;
+}
+
+.badge-kind.recordatorio {
+  color: #0f7b8a;
+  background: #eefafb;
+}
+
 .badge-kind.error {
   color: var(--red-text);
   background: var(--red-bg);
@@ -376,6 +386,16 @@ h3 {
   --accent-bg: #fbfbfa;
 }
 
+.stage.kind-agenda {
+  --accent: #c3a9e8;
+  --accent-bg: #faf7ff;
+}
+
+.stage.kind-recordatorio {
+  --accent: #8fcdd6;
+  --accent-bg: #f3fbfc;
+}
+
 .stage.kind-error {
   --accent: #e4a9aa;
   --accent-bg: #fff7f7;
@@ -457,6 +477,14 @@ h3 {
 .call-card.kind-memory,
 .call-card.kind-neutral {
   --accent: #d8d4cb;
+}
+
+.call-card.kind-agenda {
+  --accent: #c3a9e8;
+}
+
+.call-card.kind-recordatorio {
+  --accent: #8fcdd6;
 }
 
 .call-card.kind-error {
