@@ -19,8 +19,10 @@ services:
     build: .
     image: eros-neurona
     container_name: eros-neurona
-    ports:
-      - "8000:8000"
+    # En Coolify NO publicamos al host (el 8000 del host lo usa Coolify).
+    # Traefik enruta el dominio → este puerto por la red interna de Docker.
+    expose:
+      - "8000"
     env_file:
       - .env
     environment:
@@ -37,8 +39,9 @@ services:
     build: ./log-viewer
     image: eros-llm-log-viewer
     container_name: eros-llm-log-viewer
-    ports:
-      - "3101:80"
+    # Igual que la app: dominio propio en Coolify → este puerto interno.
+    expose:
+      - "80"
     depends_on:
       - app
     restart: unless-stopped
