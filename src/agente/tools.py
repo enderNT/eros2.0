@@ -259,10 +259,40 @@ def _agendar_cita(args: dict, ctx: dict) -> str:
                     response_text=render_data_text({"status": "error", "error": str(e)}),
                     metadata={"purpose": "memory.long.write", "tool": "agendar_cita"},
                 )
+        _encolar_recordatorios(res, args, ctx)
         return json.dumps({"status": "ok", "slot": args["slot"]})
     if res.status == "slot_taken":
         return json.dumps({"status": "slot_taken", "detalle": "ese horario se ocupó"})
     return json.dumps({"status": "error", "detalle": res.detail[:200]})
+
+
+def _encolar_recordatorios(res, args: dict, ctx: dict) -> None:
+    """Crea las filas de recordatorio para una cita recién confirmada. Best-effort:
+    cualquier fallo se registra pero no afecta la confirmación de la cita."""
+    if not settings.recordatorio_enabled:
+        return
+    conv = ctx.get("conversation_id")
+    if conv is None:
+        return  # sin conversación no hay a dónde mandar el recordatorio
+    try:
+        from datetime import datetime
+
+        from .recordatorios import leads_minutes
+
+        slot_dt = datetime.fromisoformat(args["slot"].replace("Z", "+00:00"))
+        n = get_store().crear_recordatorios(
+            invitee_uri=getattr(res, "invitee_uri", None),
+            event_uri=getattr(res, "event_uri", None),
+            conversation_id=conv,
+            user_id=ctx.get("user_id"),
+            nombre=args.get("nombre"),
+            correo=args.get("correo"),
+            slot=slot_dt,
+            leads_minutes=leads_minutes(),
+        )
+        log.info("recordatorios encolados: %s (conv=%s)", n, conv)
+    except Exception as e:  # noqa: BLE001
+        log.warning("encolar recordatorios falló: %s", e)
 
 
 def _escalar_a_humano(args: dict, ctx: dict) -> str:

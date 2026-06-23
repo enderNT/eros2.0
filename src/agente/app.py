@@ -8,7 +8,10 @@ Orquestación lineal sin framework de grafos:
           → enviar a Chatwoot + guardar historial
 """
 
+import asyncio
+import json as _json
 import logging
+from datetime import datetime
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
@@ -16,10 +19,12 @@ from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from .agent import responder
+from .calendly import verificar_firma_webhook
 from .chatwoot import get_chatwoot
 from .config import settings
 from .llm import compactar_historial, detectar_crisis
 from .llm_logger import get_llm_logger, render_data_text
+from .recordatorios import despachar_due, leads_minutes
 from .store import get_store
 from .webhook import parse_evento
 
@@ -286,3 +291,77 @@ async def chatwoot_webhook(request: Request):
     )
     texto = await run_in_threadpool(_procesar, ev)
     return {"ok": True, "respuesta": texto}
+
+
+# --- Recordatorios: webhook Calendly + poller --------------------------------
+
+def _procesar_calendly_evento(evento: str, p: dict) -> None:
+    """Sincroniza la cola de recordatorios con Calendly (corre en threadpool)."""
+    store = get_store()
+    invitee_uri = p.get("uri")
+
+    if evento == "invitee.canceled":
+        if invitee_uri:
+            n = store.cancelar_recordatorios_por_invitee(invitee_uri)
+            log.info("calendly cancel: %s recordatorio(s) cancelado(s)", n)
+        return
+
+    if evento == "invitee.created":
+        # Cubre reagendamientos (cancel+create). El webhook no trae conversation_id,
+        # así que lo recuperamos por correo de un recordatorio previo (reserva por bot).
+        correo = p.get("email")
+        sched = p.get("scheduled_event") or {}
+        start = sched.get("start_time")
+        if not (correo and start):
+            return
+        conv = store.conversacion_por_correo(correo)
+        if not conv:
+            log.info("calendly created sin conversación previa (correo externo) → omitido")
+            return
+        slot_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
+        store.crear_recordatorios(
+            invitee_uri=invitee_uri,
+            event_uri=sched.get("uri"),
+            conversation_id=conv["conversation_id"],
+            user_id=conv["user_id"],
+            nombre=p.get("name"),
+            correo=correo,
+            slot=slot_dt,
+            leads_minutes=leads_minutes(),
+        )
+
+
+@app.post("/webhook/calendly")
+async def calendly_webhook(request: Request):
+    if settings.calendly_webhook_token:
+        if request.query_params.get("token") != settings.calendly_webhook_token:
+            return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+
+    body = await request.body()
+    firma = request.headers.get("Calendly-Webhook-Signature", "")
+    if not verificar_firma_webhook(settings.calendly_webhook_signing_key, firma, body):
+        log.warning("webhook calendly: firma inválida")
+        return JSONResponse({"ok": False, "error": "bad_signature"}, status_code=401)
+
+    payload = _json.loads(body)
+    evento = payload.get("event", "")
+    log.info("webhook calendly → %s", evento)
+    await run_in_threadpool(_procesar_calendly_evento, evento, payload.get("payload", {}))
+    return {"ok": True}
+
+
+async def _loop_recordatorios() -> None:
+    intervalo = max(10, settings.recordatorio_poll_seconds)
+    log.info("poller de recordatorios activo (cada %ss)", intervalo)
+    while True:
+        try:
+            await run_in_threadpool(despachar_due)
+        except Exception as e:  # noqa: BLE001
+            log.error("poller recordatorios: %s", e)
+        await asyncio.sleep(intervalo)
+
+
+@app.on_event("startup")
+async def _startup_recordatorios() -> None:
+    if settings.recordatorio_enabled:
+        asyncio.create_task(_loop_recordatorios())

@@ -4,6 +4,8 @@ Flujo: get_event_types → available_times (máx 7 días) → crear_invitee.
 V3: solo un 2xx de crear_invitee cuenta como reserva confirmada.
 """
 
+import hashlib
+import hmac
 import logging
 from dataclasses import dataclass
 from functools import lru_cache
@@ -23,7 +25,28 @@ class ResultadoReserva:
     status: str  # "ok" | "slot_taken" | "error"
     cancel_url: Optional[str] = None
     reschedule_url: Optional[str] = None
+    invitee_uri: Optional[str] = None   # URI del invitee (clave para casar webhooks)
+    event_uri: Optional[str] = None     # URI del scheduled_event
     detail: str = ""
+
+
+def verificar_firma_webhook(signing_key: str, header: str, body: bytes) -> bool:
+    """Valida el header `Calendly-Webhook-Signature` (formato 't=<ts>,v1=<hmac>').
+
+    HMAC-SHA256 de '<t>.<body>' con la signing key registrada en la subscription.
+    Si no hay signing key configurada, no se puede verificar → se rechaza.
+    """
+    if not signing_key or not header:
+        return False
+    partes = dict(
+        p.split("=", 1) for p in header.split(",") if "=" in p
+    )
+    t, v1 = partes.get("t"), partes.get("v1")
+    if not t or not v1:
+        return False
+    firmado = f"{t}.".encode() + body
+    esperado = hmac.new(signing_key.encode(), firmado, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(esperado, v1)
 
 
 class CalendlyClient:
@@ -77,7 +100,11 @@ class CalendlyClient:
         if r.is_success:
             res = r.json().get("resource", {})
             return ResultadoReserva(
-                "ok", res.get("cancel_url"), res.get("reschedule_url")
+                "ok",
+                cancel_url=res.get("cancel_url"),
+                reschedule_url=res.get("reschedule_url"),
+                invitee_uri=res.get("uri"),
+                event_uri=res.get("event"),
             )
         if r.status_code in (409, 422):
             return ResultadoReserva("slot_taken", detail=r.text)

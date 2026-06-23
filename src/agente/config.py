@@ -32,6 +32,15 @@ class Settings(BaseSettings):
     calendly_timezone: str = "America/Mexico_City"
     calendly_location_kind: str = "physical"
     calendly_scheduling_link: str = ""  # link de autoservicio
+    calendly_webhook_token: str = ""        # secreto del query ?token= del webhook Calendly
+    calendly_webhook_signing_key: str = ""  # clave HMAC que registraste en la subscription
+
+    # Recordatorios de cita (cola durable en Postgres + poller in-process).
+    # La plantilla WhatsApp (nombre/idioma/variables) va fija en recordatorios.py.
+    recordatorio_enabled: bool = True
+    # Minutos ANTES de la cita para cada recordatorio (csv). Ej "1440,10" = 24h y 10 min.
+    recordatorio_lead_minutes: str = "1440,10"
+    recordatorio_poll_seconds: int = 60      # cada cuánto el poller revisa la cola
 
     # Crisis: mensaje/recursos aprobados por la clínica (hueco — T17)
     crisis_message: str = "<<recursos de crisis — definir con la clínica>>"

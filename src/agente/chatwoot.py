@@ -32,6 +32,35 @@ class ChatwootClient:
         r.raise_for_status()
         return r.json()
 
+    def enviar_plantilla(
+        self,
+        conversation_id,
+        *,
+        nombre_plantilla: str,
+        idioma: str,
+        processed_params: dict,
+        fallback: str = "",
+    ) -> dict:
+        """Envía un mensaje de PLANTILLA de WhatsApp (HSM) por Chatwoot.
+
+        Necesario fuera de la ventana de 24h: WhatsApp solo entrega plantillas
+        pre-aprobadas. `processed_params` mapea posición→valor ({"1": "...", ...}).
+        """
+        r = self._http.post(
+            f"/api/v1/accounts/{self._account}/conversations/{conversation_id}/messages",
+            json={
+                "content": fallback,
+                "message_type": "outgoing",
+                "template_params": {
+                    "name": nombre_plantilla,
+                    "language": idioma,
+                    "processed_params": processed_params,
+                },
+            },
+        )
+        r.raise_for_status()
+        return r.json()
+
     def set_atributo(self, conversation_id, key: str, value) -> dict:
         r = self._http.post(
             f"/api/v1/accounts/{self._account}/conversations/{conversation_id}/custom_attributes",
