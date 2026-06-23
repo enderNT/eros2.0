@@ -15,3 +15,6 @@ build/
 .claude
 .pytest_cache/
 .deepeval/
+
+# Override de Compose solo-local (Coolify despliega docker-compose.yml a secas)
+docker-compose.override.yml
