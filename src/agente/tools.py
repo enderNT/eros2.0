@@ -10,6 +10,8 @@ import logging
 import unicodedata
 from datetime import datetime, timedelta
 from datetime import timezone as _tz
+from datetime import tzinfo as _tzinfo
+from zoneinfo import ZoneInfo
 
 from .calendly import get_calendly
 from .chatwoot import get_chatwoot
@@ -47,7 +49,12 @@ TOOLS = [
         "name": "ver_horarios",
         "description": (
             "Devuelve horarios disponibles para la cita de valoración en los próximos "
-            "días. Úsalo SIEMPRE antes de proponer un horario; nunca inventes horarios."
+            "días. Úsalo SIEMPRE antes de proponer un horario; nunca inventes horarios. "
+            "Devuelve una lista en 'horarios', donde cada elemento trae 'etiqueta' (hora "
+            "local ya legible, ej. 'jueves 2 jul, 7:00 p.m.' — úsala para mostrar y para "
+            "que el paciente elija) e 'id' (identificador opaco que debes copiar TAL CUAL "
+            "en agendar_cita; no lo conviertas ni lo edites). La lista es un muestreo que "
+            "ya cubre distintos días y franjas (mañana/tarde/noche): ofrécela amplia."
         ),
         "input_schema": {
             "type": "object",
@@ -73,7 +80,7 @@ TOOLS = [
                 "correo": {"type": "string", "description": "Correo del paciente."},
                 "slot": {
                     "type": "string",
-                    "description": "Horario elegido en ISO 8601 UTC (ej. 2026-07-01T18:00:00Z), de los que devolvió ver_horarios.",
+                    "description": "El 'id' EXACTO de un horario devuelto por ver_horarios (ISO 8601 UTC, ej. 2026-07-01T18:00:00Z). Cópialo tal cual; no uses la etiqueta legible ni lo recalcules.",
                 },
                 "asunto": {
                     "type": "string",
@@ -161,6 +168,80 @@ def _buscar_wiki(args: dict, ctx: dict) -> str:
     return json.dumps({"resultados": top})
 
 
+# Nombres en español, sin depender del locale del sistema (locale puede no estar
+# instalado en el contenedor). weekday(): lunes=0 … domingo=6.
+_DIAS_ES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+_MESES_ES = ["", "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+
+
+def _zona_local() -> _tzinfo:
+    """ZoneInfo de la zona configurada; cae a UTC si el nombre es inválido."""
+    try:
+        return ZoneInfo(settings.calendly_timezone)
+    except Exception:  # noqa: BLE001
+        return _tz.utc
+
+
+def _etiqueta_local(dt_local: datetime) -> str:
+    """'jueves 2 jul, 7:00 p.m.' — hora ya en zona local, lista para mostrar."""
+    dia = _DIAS_ES[dt_local.weekday()]
+    h12 = dt_local.hour % 12 or 12
+    ampm = "a.m." if dt_local.hour < 12 else "p.m."
+    return f"{dia} {dt_local.day} {_MESES_ES[dt_local.month]}, {h12}:{dt_local.minute:02d} {ampm}"
+
+
+def _franja(hora: int) -> int:
+    """Mañana (<12) | tarde (12–16) | noche (>=17). Para muestrear amplio."""
+    if hora < 12:
+        return 0
+    if hora < 17:
+        return 1
+    return 2
+
+
+def _muestreo_amplio(locales: list[tuple], cap: int = 12, por_franja: int = 2) -> list[tuple]:
+    """Reemplaza el recorte ciego (los primeros N) por un muestreo que enseñe la
+    amplitud real de la agenda. `locales` = [(id_utc, dt_local)] ya ordenado.
+
+    Por día y franja toma hasta `por_franja` slots repartidos (extremos de la
+    franja, no consecutivos); luego reparte el cupo global round-robin entre días
+    para que el primer día no se coma todas las opciones. Determinista."""
+    por_dia: dict = {}
+    for utc, dl in locales:
+        por_dia.setdefault(dl.date(), []).append((utc, dl))
+
+    candidatos_por_dia: list[list[tuple]] = []
+    for fecha in sorted(por_dia):
+        franjas: dict = {}
+        for utc, dl in por_dia[fecha]:
+            franjas.setdefault(_franja(dl.hour), []).append((utc, dl))
+        elegidos: list[tuple] = []
+        for f in sorted(franjas):
+            grupo = franjas[f]
+            if len(grupo) <= por_franja:
+                elegidos.extend(grupo)
+            elif por_franja == 1:
+                elegidos.append(grupo[0])
+            else:
+                paso = (len(grupo) - 1) / (por_franja - 1)
+                idxs = sorted({round(i * paso) for i in range(por_franja)})
+                elegidos.extend(grupo[i] for i in idxs)
+        elegidos.sort(key=lambda x: x[1])
+        candidatos_por_dia.append(elegidos)
+
+    salida: list[tuple] = []
+    i = 0
+    while len(salida) < cap and any(i < len(d) for d in candidatos_por_dia):
+        for d in candidatos_por_dia:
+            if i < len(d):
+                salida.append(d[i])
+                if len(salida) >= cap:
+                    break
+        i += 1
+    salida.sort(key=lambda x: x[1])
+    return salida
+
+
 def _ver_horarios(args: dict, ctx: dict) -> str:
     cal = get_calendly()
     if cal is None or not settings.calendly_event_type:
@@ -182,8 +263,29 @@ def _ver_horarios(args: dict, ctx: dict) -> str:
     except Exception as e:  # noqa: BLE001
         log.warning("ver_horarios falló: %s", e)
         return json.dumps({"error": "no pude consultar la agenda ahora", "horarios": []})
-    horarios = [s["start_time"] for s in slots if s.get("start_time")][:8]
-    return json.dumps({"horarios": horarios, "zona": settings.calendly_timezone})
+
+    # A: convertimos a hora local UNA vez, en código. El modelo nunca hace
+    # aritmética de zonas: lee 'etiqueta' y reenvía 'id' tal cual a agendar_cita.
+    zona = _zona_local()
+    locales: list[tuple] = []
+    for s in slots:
+        st = s.get("start_time")
+        if not st:
+            continue
+        try:
+            dl = datetime.fromisoformat(st.replace("Z", "+00:00")).astimezone(zona)
+        except ValueError:
+            continue
+        locales.append((st, dl))
+    locales.sort(key=lambda x: x[1])
+
+    # C: muestreo representativo en vez de los primeros 8 consecutivos.
+    elegidos = _muestreo_amplio(locales)
+    horarios = [{"id": utc, "etiqueta": _etiqueta_local(dl)} for utc, dl in elegidos]
+    return json.dumps(
+        {"horarios": horarios, "zona": settings.calendly_timezone},
+        ensure_ascii=False,
+    )
 
 
 def _agendar_cita(args: dict, ctx: dict) -> str:

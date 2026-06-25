@@ -120,13 +120,34 @@ def test_ver_horarios_lista(monkeypatch):
     monkeypatch.setattr(T, "get_calendly", lambda: Cal())
     monkeypatch.setattr(T.settings, "calendly_event_type", "ev")
     out = json.loads(T.ejecutar_tool("ver_horarios", {}, {}))
-    assert out["horarios"] == ["2026-07-01T18:00:00Z", "2026-07-02T19:00:00Z"]
+    # A: cada horario trae 'id' opaco (UTC, para reenviar) y 'etiqueta' local legible.
+    assert [h["id"] for h in out["horarios"]] == ["2026-07-01T18:00:00Z", "2026-07-02T19:00:00Z"]
+    assert all(h.get("etiqueta") for h in out["horarios"])
 
 
 def test_ver_horarios_sin_calendly(monkeypatch):
     monkeypatch.setattr(T, "get_calendly", lambda: None)
     out = json.loads(T.ejecutar_tool("ver_horarios", {}, {}))
     assert out["horarios"] == []
+
+
+def test_ver_horarios_muestrea_amplio_no_recorta_primeros(monkeypatch):
+    """C: con muchos slots de mañana en el día 1, el muestreo NO debe enterrar la
+    tarde/noche ni los días siguientes (lo que hacía el viejo [:8])."""
+    manana = [{"start_time": f"2026-07-01T{h:02d}:00:00Z"} for h in range(14, 18)]  # 8-11am local
+    noche = [{"start_time": "2026-07-02T01:00:00Z"}]                                 # 7pm local día 1
+    dia2 = [{"start_time": "2026-07-02T15:00:00Z"}]                                  # 9am local día 2
+
+    class Cal:
+        def available_times(self, ev, start, end, ctx=None):
+            return manana + noche + dia2
+
+    monkeypatch.setattr(T, "get_calendly", lambda: Cal())
+    monkeypatch.setattr(T.settings, "calendly_event_type", "ev")
+    out = json.loads(T.ejecutar_tool("ver_horarios", {}, {}))
+    ids = {h["id"] for h in out["horarios"]}
+    assert "2026-07-02T01:00:00Z" in ids   # la noche del día 1 se ofrece
+    assert "2026-07-02T15:00:00Z" in ids   # el día 2 se ofrece
 
 
 # --- escalar_a_humano --------------------------------------------------------
