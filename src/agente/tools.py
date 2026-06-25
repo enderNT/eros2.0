@@ -302,6 +302,7 @@ def _agendar_cita(args: dict, ctx: dict) -> str:
             correo=args["correo"],
             timezone=settings.calendly_timezone,
             location_kind=settings.calendly_location_kind,
+            location_value=settings.calendly_location_value or None,
             asunto=args.get("asunto"),
             ctx=ctx,
             call_order=intento + 1,

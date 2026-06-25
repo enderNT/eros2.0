@@ -31,6 +31,7 @@ _DATOS = dict(
     correo="ana@mail.com",
     timezone="America/Mexico_City",
     location_kind="physical",
+    location_value="Av. Siempre Viva 123, Col. Centro, CDMX",
 )
 
 
@@ -66,6 +67,47 @@ def test_crear_invitee_400_es_peticion_no_utilizable():
     res = _client(h).crear_invitee(**_DATOS)
     assert res.status == "slot_taken"
     assert "invalid" in res.detail
+
+
+def test_crear_invitee_fisico_envia_location_location():
+    """kind physical → el payload debe incluir location.location con la dirección."""
+    captura = {}
+
+    def h(req):
+        captura["body"] = json.loads(req.content)
+        return httpx.Response(201, json={"resource": {}})
+
+    res = _client(h).crear_invitee(**_DATOS)
+    assert res.status == "ok"
+    assert captura["body"]["location"] == {
+        "kind": "physical",
+        "location": "Av. Siempre Viva 123, Col. Centro, CDMX",
+    }
+
+
+def test_crear_invitee_conferencia_omite_location_location():
+    """kind de conferencia → solo lleva kind; Calendly genera el enlace."""
+    captura = {}
+
+    def h(req):
+        captura["body"] = json.loads(req.content)
+        return httpx.Response(201, json={"resource": {}})
+
+    datos = {**_DATOS, "location_kind": "zoom_conference", "location_value": None}
+    res = _client(h).crear_invitee(**datos)
+    assert res.status == "ok"
+    assert captura["body"]["location"] == {"kind": "zoom_conference"}
+
+
+def test_crear_invitee_fisico_sin_valor_falla_en_preflight():
+    """kind que exige location pero sin valor → error sin tocar la red."""
+    def h(req):
+        raise AssertionError("no debe llamar Calendly sin location.location")
+
+    datos = {**_DATOS, "location_value": None}
+    res = _client(h).crear_invitee(**datos)
+    assert res.status == "error"
+    assert "location.location" in res.detail
 
 
 def test_available_times_envia_params():

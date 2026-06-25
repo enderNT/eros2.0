@@ -77,8 +77,6 @@ Horario de atención: **lunes a viernes, de 8:00 a 17:00 hrs**.
 
 Sócrates 128, Polanco, Ciudad de México.
 
-[COMPLETAR: referencias y estacionamiento, si deseas agregarlos.]
-
 ## Modalidad
 
 Todos los servicios —valoración, estimulación y atención psicológica— son **presenciales**,

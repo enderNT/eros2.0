@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     calendly_event_type: str = ""  # URI del tipo de evento (un solo tipo por ahora)
     calendly_timezone: str = "America/Mexico_City"
     calendly_location_kind: str = "physical"
+    # Valor de la ubicación (location.location). Calendly lo exige cuando el kind es
+    # physical/custom/ask_invitee/outbound_call/inbound_call. Para físico: la dirección
+    # exacta de la clínica, igual a la configurada en el Event Type. Para conferencias
+    # (zoom/google/teams) déjalo vacío: Calendly genera el enlace.
+    calendly_location_value: str = ""
     calendly_scheduling_link: str = ""  # link de autoservicio
     calendly_webhook_token: str = ""        # secreto del query ?token= del webhook Calendly
     calendly_webhook_signing_key: str = ""  # clave HMAC que registraste en la subscription

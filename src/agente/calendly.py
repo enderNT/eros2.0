@@ -25,6 +25,17 @@ BASE_URL = "https://api.calendly.com"
 
 _REDACTED_HEADERS = {"authorization", "cookie", "set-cookie"}
 
+# Kinds donde Calendly exige location.location además de location.kind. Para
+# conferencias (zoom/google/teams/gotomeeting) basta el kind: el enlace lo genera
+# Calendly. Ver doc "Create Event Invitee" → objeto location.
+_KINDS_REQUIEREN_LOCATION = {
+    "physical",
+    "custom",
+    "ask_invitee",
+    "outbound_call",
+    "inbound_call",
+}
+
 
 def _utc_dt(value: str) -> datetime:
     dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -248,6 +259,7 @@ class CalendlyClient:
         correo: str,
         timezone: str,
         location_kind: str,
+        location_value: Optional[str] = None,
         asunto: Optional[str] = None,
         ctx: dict | None = None,
         call_order: int = 1,
@@ -257,11 +269,33 @@ class CalendlyClient:
         Nota: el código exacto de "slot ocupado" puede afinarse; V3 se cumple
         igual porque solo `is_success` produce "ok".
         """
+        location: dict = {"kind": location_kind}
+        if location_kind in _KINDS_REQUIEREN_LOCATION:
+            # Calendly rechaza el payload sin location.location para estos kinds.
+            # Sin el valor configurado no podemos armar una petición válida: fallamos
+            # en preflight para no gastar la llamada ni confundir al modelo.
+            if not location_value:
+                detail = (
+                    f"location.location es obligatorio para kind '{location_kind}'; "
+                    "configura calendly_location_value con la dirección de la clínica."
+                )
+                self._log_preflight_rejected(
+                    ctx=ctx,
+                    payload={
+                        "event_type": event_type,
+                        "start_time": start_time,
+                        "location": location,
+                    },
+                    detail=detail,
+                    call_order=call_order,
+                )
+                return ResultadoReserva("error", detail=detail)
+            location["location"] = location_value
         payload: dict = {
             "event_type": event_type,
             "start_time": start_time,
             "invitee": {"name": nombre, "email": correo, "timezone": timezone},
-            "location": {"kind": location_kind},
+            "location": location,
         }
         if asunto:
             payload["questions_and_answers"] = [
