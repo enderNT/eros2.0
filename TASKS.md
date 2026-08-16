@@ -107,6 +107,22 @@ a timeout surfacing as `KapsoError`, pagination. **No network, no real send, eve
 
 Acceptance: `pytest -q` green; services can be written against `ports/channel.py` alone.
 
+---
+
+# ⛔ STOP — human review required
+
+**`/next` must not cross this line.** Everything above (T1–T4) is foundation: disjoint
+paths, contracts fixed by the spec, and tests that verify behaviour rather than shape. It
+is safe to run unattended.
+
+Everything below needs a human between tasks, for reasons stated in each task. If you
+reach this line in an autonomous run: stop, report that the foundation is complete, and
+say what a reviewer should look at first.
+
+To lift the barrier, a human moves this block down past the tasks they have approved.
+
+---
+
 ## [ ] T5 — Control panel
 
 Needs T2 and T4. §3, §11, and the panel decision in `PROJECT.md`.

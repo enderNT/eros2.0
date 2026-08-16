@@ -347,7 +347,41 @@ placeholder crisis message is a hard failure, not a warning.
   malformed payloads return 4xx and are not processed.
 - Every behaviour change ships with a test. A test that needs the network is a bug.
 
-## 15. Deployment
+## 15. Appendix — Kapso inbound payload
+
+Taken from Kapso's documentation, not from a live delivery. Field names are verbatim; the
+nested shapes are summarized. **Verify against a real webhook delivery before trusting
+this in T6** — and if reality differs, fix this appendix in the same change.
+
+Unbuffered body:
+
+```json
+{
+  "message": { "id": "...", "timestamp": "...", "type": "text", "from": "...",
+               "text": { ... },
+               "kapso": { "direction": "...", "status": "...", "processing_status": "...",
+                          "origin": "...", "has_media": false, "content": "..." } },
+  "conversation": { "id": "...", "...": "identifiers and metadata",
+                    "kapso": { "...": "summary metrics" } },
+  "is_new_conversation": true,
+  "phone_number_id": "..."
+}
+```
+
+Batched body (buffering enabled): an envelope with `type`, `batch: true`, `batch_info`,
+and `data: [...]` where each item has the unbuffered shape. The request also carries
+`X-Webhook-Batch: true`.
+
+The event name arrives in the `X-Webhook-Event` header (`whatsapp.message.received`).
+**The authentication header is not documented in that page** — determine it from a real
+delivery or from the webhook creation API, and until then treat the endpoint as
+unauthenticated-by-default and refuse to deploy it publicly.
+
+Note for the adapter: `message.kapso.direction` and `origin` are how an outbound message
+sent by a human from the Inbox can be told apart from ours — useful later, not a
+substitute for the mute switch.
+
+## 16. Deployment
 
 One container, one process. `Dockerfile` builds the app; Coolify runs it with the SQLite
 file on a **persistent volume** — without that volume, a redeploy erases every profile,
