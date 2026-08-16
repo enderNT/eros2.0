@@ -10,11 +10,12 @@ data/
 dist/
 build/
 *.egg-info/
-
-.agents/
-.claude
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
 .deepeval/
 
-# Override de Compose solo-local (Coolify despliega docker-compose.yml a secas)
-docker-compose.override.yml
+# Agent setup: settings are shared, everything else is local
+.claude/*
+!.claude/settings.json
+.qwen/tmp/

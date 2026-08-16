@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(qwen:*)",
+      "Bash(kapso status)",
+      "Bash(kapso projects current)",
+      "Bash(kapso projects list)"
+    ]
+  }
+}
