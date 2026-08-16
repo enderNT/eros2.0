@@ -16,7 +16,14 @@ only, nothing committed.
 
 ---
 
-## [ ] T1 — Skeleton and layer scaffolding
+## [x] T1 — Skeleton and layer scaffolding
+
+→ result: scaffold live — pyproject (hatchling/src layout/dev extras), all §3 packages,
+`config.py` (§12 settings, boot fails on missing values and on the `<<pendiente>>` crisis
+message), `logging_setup.py` (JSON logs, deny-list redaction, phone hash+last2), `app.py`
+factory + `web/health.py` (version + SQLite probe), AST layer test for §2.1, `.env.example`,
+README. 16 tests green; `/health` verified live under uvicorn; layer test verified to fail
+on an injected `from ..services import x` in `domain/`.
 
 The empty shape of §2 and §3, so nothing lands in the wrong place later.
 

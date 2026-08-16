@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agente"
+version = "0.1.0"
+description = "WhatsApp conversational assistant for a psychology clinic"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic",
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic-settings",
+    "httpx",
+    "jinja2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "freezegun",
+    "ruff",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agente"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
