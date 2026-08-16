@@ -50,12 +50,65 @@ payment processing, and a general-purpose CRM.
 | Persistence | Postgres via `psycopg` 3 |
 | Config | `pydantic-settings`, environment only |
 | Tests | `pytest` |
-| Messaging channel | **Kapso** (WhatsApp Business) — replaces Chatwoot |
+| Messaging channel | **Kapso** (WhatsApp Business) — transport *and* human inbox |
+| Human console | Kapso Inbox. **Chatwoot is gone**; nothing replaces it |
 | Scheduling | Calendly API |
 | Deploy | Docker; Coolify as the host |
 
 **Orchestration is an open decision for v3.** Previous versions used a graph of nodes;
 that is not a given. Do not assume a framework until it is written here.
+
+## Architecture decisions
+
+Closed. Each line is a decision, not a description — change it here before changing code.
+
+**Channel.** Kapso is transport only: inbound webhook (`whatsapp.message.received`),
+outbound send API, and the shared Inbox for humans. The conversational logic lives in this
+repository — we do **not** move the brain into Kapso Workflows.
+
+**Number.** One production number today: `Nutrificha`, `+1 205-294-3796`,
+`phone_number_id 1087343774471931`, in Kapso project *Casas Inc*. Its only webhook pointed
+at a dead ngrok tunnel, so it is free to repoint. Embedded signup (customer-owned numbers)
+comes later, but the data model is **multi-number from day one**: `phone_number_id` is part
+of the key everywhere. Reusing *Casas Inc* is a deliberate temporary choice.
+
+**No Chatwoot.** The Kapso Inbox covers human takeover for the 1–2 clinic people who need
+it, and can be embedded by iframe if we ever want it inside our own page. Mirroring every
+message into a second system would mean two sources of truth about who is handling a
+conversation, plus another Coolify deployment. Consequence accepted: **the conversation
+history lives in Kapso**, not on our server.
+
+**Human handoff — bot-off by foreign outbound.** Kapso's Inbox "Handoff" button pauses
+*Kapso workflows*; our bot is not a workflow, and there is no handoff webhook event
+(the events are `message.received|sent|delivered|read|failed`,
+`conversation.created|ended|inactive`, `contact.identity_changed`). So the bot mutes itself
+on evidence, not on notification: we subscribe to `whatsapp.message.sent`, and **an
+outbound message we did not send means a human is in the conversation** → pause the bot for
+that conversation. Reactivation is explicit (a timeout, or the human closing the
+conversation). Secondary signal: conversation assignments via the API. This needs a live
+test against the API before it is built.
+
+**One voice, several minds.** Split by *kind of decision*, never by topic:
+
+| Job | Who | Why |
+|---|---|---|
+| Talking to the patient | One agent, Sonnet, with tools | Splitting the writing across agents breaks tone, and tone is the product on WhatsApp |
+| Crisis check | Cheap classifier (Haiku) on every inbound, before the agent | Binary safety decision, not a conversation |
+| History compaction | Haiku, asynchronous, off the reply path | Mechanical, must not add latency |
+| Scheduling | Deterministic code exposed as tools | v2's bugs were dates and timezones; that is fixed with code and fixed-clock tests, not with more LLM |
+
+**Knowledge: an LLM wiki in context, not RAG.** Clinic knowledge lives as curated markdown
+written for the model, loaded into the cached system prompt. No embeddings, no vector
+store, no retrieval step. If the wiki outgrows the cache budget (~10–15k tokens), the next
+step is a page selector, **not** a switch to embeddings.
+
+**Memory: two layers.**
+
+1. *Durable profile* — small structured record per contact: name, preferred modality,
+   timezone, confirmed appointment, handoff state. A confirmed appointment never lives in
+   a summary.
+2. *Rolling window* — the last few turns verbatim, everything older folded into a rolling
+   summary. Compaction triggers on **tokens**, not message count, and is written by Haiku.
 
 ## Rules
 
@@ -85,7 +138,16 @@ that is not a given. Do not assume a framework until it is written here.
 
 Answered with the owner before they become code:
 
-- Orchestration shape for v3, and how much of the v2 node design survives.
-- Which Kapso project and number the clinic bot binds to.
-- Conversation memory: what is stored, for how long, and what gets deleted.
-- Whether reminders / proactive outbound messaging are in scope for v3.
+- **Orchestration shape** for v3: how the agent loop, the crisis gate and the tools fit
+  together concretely.
+- **Handoff, verified.** Does an Inbox takeover create an API-visible assignment, and does
+  `whatsapp.message.sent` fire for messages a human sends from the Inbox? The bot-off
+  design above depends on it. Test against the live API before building.
+- **Retention.** Kapso holds the full history. How long do we keep our own copy (rolling
+  window, summaries, profile), and what does a deletion request mean in practice?
+- **Reminders / proactive outbound.** In scope for v3? If yes, an approved WhatsApp
+  template is required — outside the 24-hour window nothing else can be sent.
+- **Failure mode.** If Kapso or Anthropic is down mid-conversation: queue and retry, or
+  drop and let the human see it in the Inbox?
+- **The number is from Alabama (+1 205)** and the patients are not. Perception and
+  conversation cost — worth revisiting before launch, not before code.
