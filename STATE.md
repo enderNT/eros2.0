@@ -12,9 +12,9 @@ Keep it short. It is a status, not a history: overwrite stale lines instead of a
 
 ## Phase
 
-**Implementing: T4 done, T5 next.** Branch `v3-rebuild`. Scaffold (T1), the
-storage foundation (T2), pure domain logic (T3), and the Kapso adapter (T4) are in place;
-everything on `main` remains reference-only.
+**Foundation complete: T1–T4 done; human review required before T5.** Branch
+`v3-rebuild`. Scaffold (T1), the storage foundation (T2), pure domain logic (T3), and the
+Kapso adapter (T4) are in place; everything on `main` remains reference-only.
 
 ## What exists right now
 
