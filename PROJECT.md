@@ -143,10 +143,13 @@ layer so it stays one module's problem.
 | History compaction | Haiku, asynchronous, off the reply path | Mechanical, must not add latency |
 | Scheduling | Deterministic code exposed as tools | v2's bugs were dates and timezones; that is fixed with code and fixed-clock tests, not with more LLM |
 
-**Knowledge: an LLM wiki in context, not RAG.** Clinic knowledge lives as curated markdown
-written for the model, loaded into the cached system prompt. No embeddings, no vector
-store, no retrieval step. If the wiki outgrows the cache budget (~10–15k tokens), the next
-step is a page selector, **not** a switch to embeddings.
+**Knowledge: an LLM wiki, not RAG.** Clinic knowledge lives as curated markdown written
+for the model. Its **table of contents sits in the cached system prompt** so the model
+knows what exists; the **section bodies are fetched by a tool** on demand. No embeddings,
+no vector store, no similarity search. If lookup quality ever disappoints, the fix is a
+better index and better section headings — not a switch to RAG. (v2 put nothing in the
+prompt and everything behind the tool; v3 keeps the index in context so the model stops
+guessing whether a fact exists.)
 
 **Memory: two layers.**
 

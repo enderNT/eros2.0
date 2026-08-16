@@ -1,7 +1,8 @@
 # STATE.md — where the project stands
 
 Living handoff note. **Anyone (or any agent) picking this up cold reads this file first**,
-then `PROJECT.md` for the decisions, then `TASKS.md` for what to do next.
+then `PROJECT.md` for the decisions, `SPEC.md` for the technical contract, and `TASKS.md`
+for what to do next.
 
 Keep it short. It is a status, not a history: overwrite stale lines instead of appending.
 
@@ -11,17 +12,22 @@ Keep it short. It is a status, not a history: overwrite stale lines instead of a
 
 ## Phase
 
-**Planning → about to start implementation.** Branch `v3-rebuild`. The repository is
+**Specified, ready to implement.** Branch `v3-rebuild`. The repository is still
 deliberately empty of application code: no `src/`, no tests, no `pyproject.toml` yet.
 Everything on `main` is the v2 implementation, kept only as reference.
+
+`SPEC.md` is written and `TASKS.md` covers T1–T13 end to end. **T1 is ready to start
+right now** — nothing blocks it.
 
 ## What exists right now
 
 - `PROJECT.md` — business, scope, stack, closed architecture decisions, open questions.
+- `SPEC.md` — the technical contract: layers, module map, pipeline, agent loop, tools,
+  memory, schema, observability, testing, deploy.
+- `TASKS.md` — T1–T13, each executable without a prior conversation.
 - `QWEN.md` / `CLAUDE.md` — how each agent works here.
 - `.qwen/skills/` — backend, API design, logging, simplification, wiki, Kapso.
 - `.qwen/commands/` — `/next`, `/handoff`, `/catchup`.
-- `TASKS.md` — the ordered backlog. **This is the entry point for real work.**
 
 ## Decided since the rewrite started
 
@@ -41,8 +47,10 @@ Full text in `PROJECT.md`; the headline versions:
 
 ## Not decided yet — do not invent these
 
-- The concrete shape of the agent loop (how the crisis gate, the tools and the reply path
-  fit together). **This is the next design conversation, and it blocks the agent code.**
+- **Clinic content.** The playbook and the wiki ship as skeletons with
+  `<<pendiente>>` markers. Prices, services and policies come from the clinic. Never
+  invent them.
+- **The crisis message text.** Written by the clinic. Boot fails while it is a placeholder.
 - Retention of our own copy of the history, and what deletion means.
 - Whether reminders / proactive outbound are in v3 (they would need an approved template).
 - Behaviour when Kapso or Anthropic is down mid-conversation.

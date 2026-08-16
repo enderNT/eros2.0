@@ -15,6 +15,12 @@ A conversational assistant for a psychology clinic. **Read `PROJECT.md`** for th
 the scope and the standing rules — it is short and it is the source of truth for *what* we
 are building. This file covers *how you work*.
 
+**`SPEC.md` is the technical contract**: layers and dependency rules, module map, the
+inbound pipeline, the agent loop, tool surface, memory, database schema, observability,
+testing and deploy. It is not auto-loaded — read the sections your task references
+(`TASKS.md` points at them) before writing code, and never contradict it. If the spec is
+wrong or silent, say so; do not improvise around it.
+
 The repository is intentionally empty at the start of `v3-rebuild`: there is no legacy code
 to preserve, and nothing to migrate unless a task says so.
 
