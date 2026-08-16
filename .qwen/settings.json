@@ -1,5 +1,8 @@
 {
   "$version": 4,
+  "context": {
+    "fileName": ["QWEN.md", "PROJECT.md", "STATE.md"]
+  },
   "tools": {
     "approvalMode": "yolo",
     "exclude": [

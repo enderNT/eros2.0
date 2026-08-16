@@ -96,16 +96,38 @@ No le pido "diseñá X". Le pido "implementá X con esta firma y estos casos".
 Si el resultado está mal: **una corrección puntual con prompt nuevo**, no un ida y vuelta
 largo. A la segunda corrección fallida, lo hago yo — el ahorro ya se perdió.
 
-## 5. Git
+## 5. Continuidad sin mí
+
+El usuario puede quedarse sin créditos y seguir solo con `qwen`. El repo tiene que
+bastarse. Mis obligaciones, no negociables:
+
+- **`STATE.md` queda al día al cerrar cada sesión mía.** Fase, qué existe, qué se decidió,
+  qué NO está decidido, gotchas. Es estado, no bitácora: sobrescribo, no acumulo.
+- **`TASKS.md` siempre con al menos 2-3 tareas listas para ejecutar** sin mí: rutas,
+  contratos, criterios de aceptación, fuera de alcance. Escribir specs es lo caro y es
+  justo lo que puedo dejar adelantado mientras tenga créditos.
+- Lo que todavía no está diseñado se marca *spec pending* explícitamente, para que `qwen`
+  se frene en vez de inventar arquitectura.
+- `QWEN.md`, `PROJECT.md` y `STATE.md` se cargan solos en cada sesión de `qwen`
+  (`context.fileName` en `.qwen/settings.json`). Si agrego un doc que él necesita siempre,
+  va ahí; si no, no se entera.
+
+Comandos del proyecto (`.qwen/commands/`): `/catchup` (dónde quedamos, no toca nada),
+`/next` (ejecuta la siguiente tarea del backlog y actualiza estado), `/handoff` (cierra la
+sesión dejando `STATE.md` y `TASKS.md` al día).
+
+## 6. Git
 
 - Commiteo yo, no `qwen`. Mensajes en el estilo del historial (`feat: ...`, en inglés).
 - No hago push ni abro PRs sin que el usuario lo pida.
 
-## 6. Referencias del repo
+## 7. Referencias del repo
 
 - `PROJECT.md` — qué construimos: negocio, alcance, stack, reglas y preguntas abiertas.
   Es el documento que se actualiza cuando cerramos una decisión con el usuario.
 - `QWEN.md` — contrato de operación de `qwen` (stack, skills, Kapso, reglas de salida)
 - `.qwen/skills/` — skills disponibles para `qwen`: `software-backend`, `dev-api-design`,
   `logging-best-practices`, `code-simplification`, `project-wiki-maintainer`
-- `.qwen/settings.json` — approval mode, MCP, comandos vetados
+- `.qwen/settings.json` — approval mode, MCP, comandos vetados, contexto autocargado
+- `STATE.md` — dónde quedamos (lo actualizo yo al cerrar; `qwen` con `/handoff`)
+- `TASKS.md` — backlog ordenado, cada tarea ejecutable sin conversación previa

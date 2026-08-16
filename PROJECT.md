@@ -117,6 +117,9 @@ be asked about a real patient.
   kill switch.
 - Server-rendered Jinja2 + HTMX. No SPA, no build step, no second deployment, no CORS. The
   point of this panel is to *remove* friction, so it ships inside the existing container.
+- **Mobile first, not merely responsive.** The real moment of use is the psychologist on
+  their phone, noticing a conversation that needs a human and muting the bot in two taps.
+  Design that screen first; the desktop layout is the afterthought, not the reverse.
 - Behind auth from the first commit — it lists patient phone numbers. Shared password from
   the environment, session cookie, and never reachable without HTTPS.
 - Read-only besides the switches. Replying is the Kapso Inbox's job; embedding that Inbox
