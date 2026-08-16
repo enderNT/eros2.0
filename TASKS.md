@@ -109,9 +109,17 @@ different decisions, and a reply with no paragraph breaks.
 Acceptance: `pytest -q` green; `domain/` tests import nothing from `adapters/` or
 `services/`.
 
-## [ ] T4 — Kapso adapter
+## [x] T4 — Kapso adapter
 
 Independent of T2 and T3; needs T1. §3, §11.
+→ result: payloads (15 tests) + client (10 tests) + channel protocol live —
+`adapters/kapso/payloads.py` Pydantic models for single/batch webhook with
+`extra="allow"`, HMAC-SHA256 verification (case-insensitive header lookup),
+`parse_webhook` dispatching and `KapsoError` on forged/malformed input;
+`adapters/kapso/client.py` async httpx with 10s timeout, `send_text` → kapso_message_id,
+paginated `list_conversations` → typed rows, every httpx failure → KapsoError, structured
+safe logs; `ports/channel.py` Channel Protocol. All time injected, no network, no real send.
+25 tests green.
 
 - `adapters/kapso/payloads.py`: Pydantic models for `whatsapp.message.received`, both the
   single form and the batched form (`X-Webhook-Batch: true`,

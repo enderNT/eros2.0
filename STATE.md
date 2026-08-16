@@ -12,12 +12,9 @@ Keep it short. It is a status, not a history: overwrite stale lines instead of a
 
 ## Phase
 
-**Implementing: T3 done, T4 next.** Branch `v3-rebuild`. Scaffold (T1), the
-storage foundation (T2), and pure domain logic (T3) are in place; everything on
-`main` remains reference-only.
-
-`SPEC.md` and `TASKS.md` cover T1–T13. **T4 (Kapso adapter) is ready to start
-right now**; it is independent of T3.
+**Implementing: T4 done, T5 next.** Branch `v3-rebuild`. Scaffold (T1), the
+storage foundation (T2), pure domain logic (T3), and the Kapso adapter (T4) are in place;
+everything on `main` remains reference-only.
 
 ## What exists right now
 
@@ -44,6 +41,15 @@ right now**; it is independent of T3.
   phone masking; timezone-aware slot labels, broad sampling and buffer checks;
   token-budget window plans with overlap; WhatsApp reply chunking; strict crisis
   verdicts. All time is injected; domain code stays free of I/O. `tests/` (107).
+- **v3 code (T4):** `adapters/kapso/payloads.py` — Pydantic models for single and
+  batched webhook payloads (`extra="allow"`), HMAC-SHA256 verification (case-insensitive
+  header lookup), `parse_webhook` dispatching and `KapsoError` on forged/malformed input.
+  `adapters/kapso/client.py` — async `httpx` with explicit timeout; `send_text(…) -> str`
+  returns kapso message id; `list_conversations(…, cursor, limit) -> ConversationList`
+  yields typed rows from Kapso JSON; every `httpx.HTTPError` → `KapsoError`, structured
+  safe logs (masked phone, no body). `ports/channel.py` — `Channel` Protocol with
+  `send_text` and `list_conversations`; frozen `ConversationRow` dataclass carrying real
+  contact phone for mute keying. Tests: 15 payload + 10 client = 25 tests green.
 
 ## Decided since the rewrite started
 

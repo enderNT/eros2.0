@@ -17,3 +17,7 @@ class StoreError(DomainError):
 
 class InvalidPhoneError(DomainError, ValueError):
     """A phone number could not be normalized to E.164."""
+
+
+class KapsoError(DomainError):
+    """Kapso channel (HTTP or webhook) failed. The underlying error is chained."""
