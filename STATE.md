@@ -12,12 +12,11 @@ Keep it short. It is a status, not a history: overwrite stale lines instead of a
 
 ## Phase
 
-**Implementing: T1 done, T2 next.** Branch `v3-rebuild`. The v3 scaffold is in
-place (package map, settings, redacted logging, app factory with `/health`,
-layer test); everything on `main` remains reference-only.
+**Implementing: T2 done, T3 next.** Branch `v3-rebuild`. Scaffold (T1) and the
+storage foundation (T2) are in place; everything on `main` remains reference-only.
 
-`SPEC.md` and `TASKS.md` cover T1–T13. **T2 (storage foundation) is ready to
-start right now** — nothing blocks it.
+`SPEC.md` and `TASKS.md` cover T1–T13. **T3 (domain logic) is ready to start
+right now**; T4 (Kapso adapter) is also unblocked and independent of T3.
 
 ## What exists right now
 
@@ -32,7 +31,14 @@ start right now** — nothing blocks it.
   boot fails on missing values and on the `<<pendiente>>` crisis message),
   `logging_setup.py` (JSON logs, deny-list redaction, phone hash + last two),
   `app.py` factory + `web/health.py`, every §3 package with docstrings.
-  `tests/` (16), `.env.example`, `README.md`.
+  `.env.example`, `README.md`.
+- **v3 code (T2):** `adapters/store/` — `db.py` (connect WAL+FK, `migrate()` with
+  `schema_version`, health probe), `migrations/0001_initial.sql` (every §10 table),
+  repositories `mutes` (three levels + expiry + audit), `messages` (dedupe, window),
+  `contacts` (contact + profile); `summaries`/`appointments`/`traces` stubbed.
+  `ports/store.py` (six protocols + row records), `domain/errors.py` (`StoreError`),
+  `domain/contacts.py` (`ContactKey`). App opens + migrates the DB in the lifespan
+  (`app.state.db`); a dead DB degrades `/health`, not the boot. `tests/` (52).
 
 ## Decided since the rewrite started
 
@@ -65,7 +71,7 @@ Full text in `PROJECT.md`; the headline versions:
 
 - The Kapso account is **live production**. Never run `kapso push`, never send a real
   WhatsApp message from a task.
-- The codebase-memory graph was reindexed at T1 and now describes the v3 tree;
+- The codebase-memory graph was reindexed at T2 and now describes the v3 tree;
   reindex again after changes that add, remove or rename modules.
 - `qwen` must be invoked bare (`qwen -p "..."`), no env-var prefix, or Claude Code's
   permission rule will not match.

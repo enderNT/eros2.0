@@ -1,5 +1,9 @@
 import pytest
 
+from agente.adapters.store import db as store_db
+from agente.adapters.store.contacts import SqliteContactsRepository
+from agente.adapters.store.messages import SqliteMessagesRepository
+from agente.adapters.store.mutes import SqliteMutesRepository
 from agente.config import Settings
 
 REQUIRED_OVERRIDES = {
@@ -27,3 +31,26 @@ def make_settings(tmp_path):
 @pytest.fixture()
 def settings(make_settings) -> Settings:
     return make_settings()
+
+
+@pytest.fixture()
+def db_conn(tmp_path):
+    conn = store_db.connect(tmp_path / "store.db")
+    store_db.migrate(conn)
+    yield conn
+    conn.close()
+
+
+@pytest.fixture()
+def contacts(db_conn):
+    return SqliteContactsRepository(db_conn)
+
+
+@pytest.fixture()
+def messages(db_conn):
+    return SqliteMessagesRepository(db_conn)
+
+
+@pytest.fixture()
+def mutes(db_conn):
+    return SqliteMutesRepository(db_conn)

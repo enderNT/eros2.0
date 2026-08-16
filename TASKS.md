@@ -49,7 +49,16 @@ Acceptance: `pip install -e ".[dev]"`, `pytest -q` green, `uvicorn agente.app:ap
 `/health`, and the layer test fails if you add `from ..services import x` to a domain
 module (verify by trying it, then remove).
 
-## [ ] T2 — Storage foundation
+## [x] T2 — Storage foundation
+
+→ result: `adapters/store/` live — `db.py` (connect WAL+FK, idempotent `migrate()`
+with `schema_version`, health probe), migration `0001` with every §10 table and the
+dedupe/window/outbox-due indexes, six repository protocols in `ports/store.py`,
+mutes (global→number→contact with expiry, one audit row per mutation), messages
+(dedupe by kapso id, window reads), contacts/profiles implemented; summaries,
+appointments and traces stubbed until their tasks. Migrations run at app boot and a
+dead database degrades `/health` instead of killing the app. 52 tests green; no SQL
+outside `adapters/store/`.
 
 §10. All of it behind repositories; no SQL escapes the store package.
 
