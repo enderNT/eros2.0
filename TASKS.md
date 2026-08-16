@@ -79,7 +79,13 @@ outside `adapters/store/`.
 
 Acceptance: `pytest -q` green; grep finds no SQL outside `adapters/store/`.
 
-## [ ] T3 — Domain logic
+## [x] T3 — Domain logic
+
+→ result: pure `domain/` modules live — `contacts` normalizes E.164 identity and
+masks logs; `scheduling` renders local labels, samples slots broadly and honours the
+booking buffer; `memory` plans token-budget compaction with overlap; `reply` emits at
+most three nonempty sentence-safe chunks; `crisis` exposes the strict verdict type.
+Explicit DST, buffer-edge, token-budget and no-paragraph tests are green (107 total).
 
 §2.6 and the pure parts of §8 and §9. **No I/O anywhere in this task** — these tests need
 no fakes at all.

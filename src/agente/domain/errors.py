@@ -13,3 +13,7 @@ class DomainError(Exception):
 
 class StoreError(DomainError):
     """Persistence failed. The underlying sqlite error is chained as cause."""
+
+
+class InvalidPhoneError(DomainError, ValueError):
+    """A phone number could not be normalized to E.164."""

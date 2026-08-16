@@ -6,17 +6,18 @@ for what to do next.
 
 Keep it short. It is a status, not a history: overwrite stale lines instead of appending.
 
-**Last updated:** 2026-08-16 · by Qwen
+**Last updated:** 2026-08-16 · by Codex
 
 ---
 
 ## Phase
 
-**Implementing: T2 done, T3 next.** Branch `v3-rebuild`. Scaffold (T1) and the
-storage foundation (T2) are in place; everything on `main` remains reference-only.
+**Implementing: T3 done, T4 next.** Branch `v3-rebuild`. Scaffold (T1), the
+storage foundation (T2), and pure domain logic (T3) are in place; everything on
+`main` remains reference-only.
 
-`SPEC.md` and `TASKS.md` cover T1–T13. **T3 (domain logic) is ready to start
-right now**; T4 (Kapso adapter) is also unblocked and independent of T3.
+`SPEC.md` and `TASKS.md` cover T1–T13. **T4 (Kapso adapter) is ready to start
+right now**; it is independent of T3.
 
 ## What exists right now
 
@@ -39,6 +40,10 @@ right now**; T4 (Kapso adapter) is also unblocked and independent of T3.
   `ports/store.py` (six protocols + row records), `domain/errors.py` (`StoreError`),
   `domain/contacts.py` (`ContactKey`). App opens + migrates the DB in the lifespan
   (`app.state.db`); a dead DB degrades `/health`, not the boot. `tests/` (52).
+- **v3 code (T3):** pure `domain/` logic — E.164 contact normalization and safe
+  phone masking; timezone-aware slot labels, broad sampling and buffer checks;
+  token-budget window plans with overlap; WhatsApp reply chunking; strict crisis
+  verdicts. All time is injected; domain code stays free of I/O. `tests/` (107).
 
 ## Decided since the rewrite started
 

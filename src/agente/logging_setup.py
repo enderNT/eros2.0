@@ -8,12 +8,13 @@ stable hash plus the last two digits (`mask_phone`).
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import sys
 from datetime import UTC, datetime
 from typing import Any
+
+from agente.domain.contacts import mask_phone
 
 # Field keys that are dropped from every log record, whatever the value.
 DENY_KEYS = frozenset(
@@ -37,13 +38,6 @@ DENY_KEYS = frozenset(
 PHONE_KEYS = frozenset({"phone", "phone_number", "contact_phone"})
 
 _RESERVED = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
-
-
-def mask_phone(raw: Any) -> str:
-    """Stable hash of the number plus its last two digits, and nothing else."""
-    digits = "".join(ch for ch in str(raw) if ch.isdigit())
-    digest = hashlib.sha256(digits.encode("utf-8")).hexdigest()[:8]
-    return f"{digest}:{digits[-2:]}"
 
 
 class RedactionFilter(logging.Filter):
