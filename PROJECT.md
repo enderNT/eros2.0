@@ -33,11 +33,12 @@ availability, price or clinical matters is a real cost, not a bug report.
 ## Scope
 
 In scope: the WhatsApp conversational layer, its state, its tools (FAQ retrieval,
-availability, booking), the escalation paths, and the operational surface needed to run it
-(health, logs, deploy).
+availability, booking), the escalation paths, the operational surface needed to run it
+(health, logs, deploy), and **one internal control panel** (see *Control panel* below).
 
-Out of scope: any frontend or patient-facing UI, clinical decision-making, medical advice,
-payment processing, and a general-purpose CRM.
+Out of scope: any patient-facing UI, clinical decision-making, medical advice, payment
+processing, and a general-purpose CRM. The control panel is an operator switchboard, not
+a product surface — humans still *reply* from the Kapso Inbox.
 
 ## Stack
 
@@ -47,7 +48,8 @@ payment processing, and a general-purpose CRM.
 | Web | FastAPI + uvicorn — inbound webhook and health |
 | LLM | Anthropic SDK (`anthropic`) |
 | HTTP client | `httpx` |
-| Persistence | Postgres via `psycopg` 3 |
+| Persistence | **SQLite** (WAL), one file on a Coolify volume — no database service |
+| Control panel | Server-rendered Jinja2 + HTMX inside the same FastAPI app — no build step |
 | Config | `pydantic-settings`, environment only |
 | Tests | `pytest` |
 | Messaging channel | **Kapso** (WhatsApp Business) — transport *and* human inbox |
@@ -78,15 +80,56 @@ message into a second system would mean two sources of truth about who is handli
 conversation, plus another Coolify deployment. Consequence accepted: **the conversation
 history lives in Kapso**, not on our server.
 
-**Human handoff — bot-off by foreign outbound.** Kapso's Inbox "Handoff" button pauses
+**Human handoff — an explicit switch we own.** Kapso's Inbox "Handoff" button pauses
 *Kapso workflows*; our bot is not a workflow, and there is no handoff webhook event
 (the events are `message.received|sent|delivered|read|failed`,
-`conversation.created|ended|inactive`, `contact.identity_changed`). So the bot mutes itself
-on evidence, not on notification: we subscribe to `whatsapp.message.sent`, and **an
-outbound message we did not send means a human is in the conversation** → pause the bot for
-that conversation. Reactivation is explicit (a timeout, or the human closing the
-conversation). Secondary signal: conversation assignments via the API. This needs a live
-test against the API before it is built.
+`conversation.created|ended|inactive`, `contact.identity_changed`). Rejected: inferring
+takeover from outbound messages we did not send — it guesses at intent from a side effect,
+and it silently depends on Kapso's event semantics staying as they are.
+
+Instead, **the bot is muted by an explicit switch that lives in our database**, flipped by
+a human in our own control panel. Nothing about the mute path depends on Kapso: the check
+is one local SQLite read on the inbound path, before any model call.
+
+Three levels, checked in this order:
+
+1. **Global kill switch** — the bot answers nobody. One row, one click, for "stop
+   everything right now".
+2. **Per-number** — a whole WhatsApp number is muted (matters once embedded signup brings
+   more numbers).
+3. **Per-contact** — this patient talks only to humans.
+
+**The switch is keyed by contact, never by conversation.** Kapso ends a conversation after
+24h of inactivity and opens a new one on the next message; a per-conversation flag would
+silently un-mute the bot the next morning. Key: `(phone_number_id, contact_phone)`.
+
+A mute is either indefinite or has an expiry (`muted_until`), so nobody discovers three
+weeks later that the bot was off for a patient. Every flip is written to an audit log —
+who, when, why — because "why did the bot not answer this person" is a question that will
+be asked about a real patient.
+
+**Control panel.** A small internal page served by the same FastAPI app:
+
+- Lists conversations **read live from the Kapso API** (`GET /conversations`, cursor
+  pagination). We do not mirror conversations into our database — Kapso stays the source of
+  truth for message history.
+- Joins each row with the local mute state and shows a toggle per contact, plus the global
+  kill switch.
+- Server-rendered Jinja2 + HTMX. No SPA, no build step, no second deployment, no CORS. The
+  point of this panel is to *remove* friction, so it ships inside the existing container.
+- Behind auth from the first commit — it lists patient phone numbers. Shared password from
+  the environment, session cookie, and never reachable without HTTPS.
+- Read-only besides the switches. Replying is the Kapso Inbox's job; embedding that Inbox
+  by iframe into the same page is a later nicety, not v3 scope.
+
+**Persistence: SQLite, single file.** Mute state, audit log, durable profiles, rolling
+summaries and scheduling state all live in one SQLite database in WAL mode, on a Coolify
+volume. Rationale: a single-container deployment with no Postgres service to provision,
+back up or connect — the same friction reduction that killed Chatwoot. Cost of the choice:
+the volume must be persistent and backed up (a redeploy without it loses everything), and
+one writer at a time — fine for one webhook process, a hard limit if we ever scale out.
+Postgres is the escape hatch if that day comes; keep all database access behind a repository
+layer so it stays one module's problem.
 
 **One voice, several minds.** Split by *kind of decision*, never by topic:
 
@@ -140,11 +183,18 @@ Answered with the owner before they become code:
 
 - **Orchestration shape** for v3: how the agent loop, the crisis gate and the tools fit
   together concretely.
-- **Handoff, verified.** Does an Inbox takeover create an API-visible assignment, and does
-  `whatsapp.message.sent` fire for messages a human sends from the Inbox? The bot-off
-  design above depends on it. Test against the live API before building.
+- **Muting is manual by design.** Nobody clicks the switch when a human jumps into the
+  Inbox in a hurry, and then bot and human answer the same patient at once. Do we accept
+  that, or does the panel eventually need an assist (a "human replied recently" hint read
+  from the Kapso API, shown as a suggestion, never as an automatic action)?
+- **Who watches the panel.** With 1–2 clinic people, is anyone actually looking at it
+  during the day, or is the realistic flow "the psychologist notices in WhatsApp and mutes
+  from their phone"? That decides how mobile-first the panel has to be.
 - **Retention.** Kapso holds the full history. How long do we keep our own copy (rolling
   window, summaries, profile), and what does a deletion request mean in practice?
+- **Backups of the SQLite volume.** Losing that file means losing every profile, summary
+  and mute. Who takes the backup and how often — Coolify volume snapshot, or a periodic
+  `VACUUM INTO` copy pushed somewhere?
 - **Reminders / proactive outbound.** In scope for v3? If yes, an approved WhatsApp
   template is required — outside the 24-hour window nothing else can be sent.
 - **Failure mode.** If Kapso or Anthropic is down mid-conversation: queue and retry, or
