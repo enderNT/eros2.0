@@ -7,6 +7,8 @@ form { display: grid; gap: 10px; } input, select, button { min-height: 44px; fon
 button { border: 0; border-radius: 8px; padding: 8px 14px; background: #155eef; color: white; }
 table { border-collapse: collapse; } th, td { text-align: left; padding: 10px 4px; vertical-align: top; border-bottom: 1px solid #ddd; }
 .error { color: #b42318; }.badge { font-size: .85rem; }.muted { color: #b42318; }
+/* Destructive and irreversible: it should not look like the other buttons. */
+button.danger { background: #b42318; }
 .subtle { color: #667085; }
 .badge-active { color: #067647; } .badge-ended { color: #667085; }
 /* Inline help. <details> so a thumb can open it; a hover tooltip is useless on a phone. */

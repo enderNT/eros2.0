@@ -93,7 +93,7 @@ async def test_three_message_burst_produces_one_reply(db_conn):
 
 @pytest.mark.asyncio
 async def test_acute_crisis_mutes_and_skips_responder(db_conn):
-    async def acute(_text):
+    async def acute(_text, _turn_id=None):
         return CrisisVerdict.ACUTE
 
     channel = FakeChannel()

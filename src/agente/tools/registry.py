@@ -81,7 +81,9 @@ DEFINITIONS: list[dict[str, Any]] = [
             "Devuelve el enlace para que el paciente confirme un horario que ya le"
             " ofreciste con ver_horarios. No reserva nada por sí sola: la cita queda"
             " agendada cuando el paciente completa sus datos en ese enlace, así que"
-            " nunca le confirmes la cita antes de que te avise que terminó."
+            " nunca le confirmes la cita antes de que te avise que terminó. El enlace"
+            " se copia COMPLETO, tal cual, incluida la parte después del '?': si le"
+            " quitas algo, la cita no se puede asociar al paciente."
         ),
         "input_schema": {
             "type": "object",

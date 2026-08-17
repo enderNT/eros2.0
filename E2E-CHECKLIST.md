@@ -20,7 +20,7 @@ casos "fallan" por algo que todavía no existe, no por calidad.
 | `buscar_wiki` | cableado | El conocimiento se puede evaluar |
 | `escalar_a_humano` | cableado | El bloque de límites se puede evaluar |
 | `ver_horarios` / `agendar_cita` | cableadas vía `tools/registry.py` | Bloque D ejecutable |
-| Webhook Calendly (`invitee.created` / `canceled`) | cableado, **pero rechaza todo mientras `CALENDLY_SIGNING_KEY` esté vacío** | D8–D10 sólo son válidos después de que un operador registre la suscripción |
+| Webhook Calendly (`invitee.created` / `canceled`) | cableado y verificado en local con `scripts/e2e.py` | Bloque D completo, sin necesidad de desplegar |
 | Clasificador de crisis (Haiku) | cableado (T11) | El bloque F evalúa el clasificador real, no sólo el camino |
 | Memoria: ventana + resumen | cableadas | El agente ve la conversación completa menos lo ya resumido; bloque H ejecutable |
 | Compaction (T12) | cableada, corre después de enviar la respuesta | Se dispara al superar `WINDOW_TOKEN_BUDGET` (2000) |
@@ -36,27 +36,41 @@ probable de toda esta prueba: anotarlo como **F-WIKI** cada vez que ocurra.
 
 ---
 
-## 1. Harness seguro (obligatorio)
+## 1. Arnés
 
-La cuenta de Kapso es producción. **Nada de esta prueba puede mandar un WhatsApp real.**
+`scripts/e2e.py`, montado dentro del contenedor. Habla con el servicio por HTTP igual que
+Kapso y Calendly —mismas firmas, mismos payloads— así que lo que pasa aquí es lo que va a
+pasar desplegado. Los mensajes salen por WhatsApp al contacto de prueba: **eso es
+deliberado**, es lo que hace que la prueba valga.
 
-1. `.env` de prueba:
-   - `KAPSO_BASE_URL` → un sink local (`http://127.0.0.1:8999`) que responde 200 y
-     registra el cuerpo. Ahí "aterrizan" las respuestas del bot y es lo que se evalúa.
-   - `KAPSO_WEBHOOK_SECRET` → valor conocido, para firmar los POST de entrada.
-   - `ANTHROPIC_API_KEY` → real (se está evaluando el modelo, no un stub).
-   - `CRISIS_MESSAGE` → texto provisional, marcado como provisional.
-   - `DB_PATH` → archivo nuevo y desechable, no el de datos reales.
-2. Levantar: `uvicorn agente.app:app --reload`.
-3. Simular al paciente: POST a `/webhook/kapso` con cuerpo tipo Kapso
-   (`id`, `timestamp`, `type: text`, `from`, `text.body`) y header
-   `X-Webhook-Signature` = HMAC-SHA256 del cuerpo crudo con el secreto.
-4. **`id` distinto en cada mensaje** — con el mismo id la deduplicación lo descarta y
-   parece que el bot se quedó mudo.
-5. Esperar > `DEBOUNCE_SECONDS` (4s) entre turnos, salvo en los casos que prueban debounce.
+```bash
+docker compose exec agente python /app/scripts/e2e.py msg "quiero agendar"
+```
 
-Conviene un script `scripts/e2e_send.py` (enviar firmado + imprimir lo que llegó al sink);
-si no existe, es lo primero que vale la pena delegar.
+| Comando | Qué hace |
+|---|---|
+| `msg "texto"` | mensaje entrante del paciente; espera e imprime la respuesta |
+| `tokens` | los tokens de reserva emitidos |
+| `book [token]` | simula que el paciente completó la reserva en Calendly |
+| `cancel [event]` | simula una cancelación |
+| `state` | perfil, citas, mute, resumen y últimos mensajes |
+| `traces` | llamadas al modelo agrupadas por turno: tokens, caché, latencia, herramientas |
+| `reset` | deja el contacto de prueba como nuevo |
+
+Para ver qué pasó en un turno: el evento ancho trae `turn_id`, y `traces` agrupa por ese
+mismo id.
+
+```bash
+docker compose logs -f agente | grep inbound_turn
+```
+
+Detalles que se pagan si se ignoran: el script ya usa un `id` distinto por mensaje (con el
+mismo, la deduplicación lo descarta y parece que el bot se quedó mudo), y hay que esperar
+más de `DEBOUNCE_SECONDS` entre turnos salvo cuando se está probando el debounce
+justamente.
+
+Para probar sin gastar WhatsApp reales, apuntar `KAPSO_BASE_URL` a un sink local que
+responda 200 y registre el cuerpo.
 
 ---
 

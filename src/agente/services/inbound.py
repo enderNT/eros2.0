@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
@@ -29,7 +31,7 @@ class InboundService:
         channel: Channel,
         *,
         reply: str = "Gracias por tu mensaje.",
-        responder: Callable[[ContactKey, str, str | None], Awaitable[str]] | None = None,
+        responder: Callable[[ContactKey, str, str | None, str], Awaitable[str]] | None = None,
         crisis_classifier: Classifier | None = None,
         crisis_message: str = "",
         crisis_directives: str = "",
@@ -67,14 +69,17 @@ class InboundService:
         payload = batch[-1]
         message = payload.message
         now = _timestamp(message.timestamp)
+        # One id per turn, on every log line and on every llm_trace row of this
+        # turn. It is what makes "where did it break" answerable: without it the
+        # model calls and the pipeline events cannot be tied together.
+        turn = _Turn(turn_id=uuid.uuid4().hex[:12], message_id=message.id, merged=len(batch))
         if self._mutes.is_bot_muted(key, now):
-            log.info(
-                "inbound_turn", extra={"message_id": message.id, "muted": True, "outcome": "muted"}
-            )
+            turn.finish(log.info, muted=True, outcome="muted")
             return
         try:
             merged = "\n".join(_text(item) for item in batch)
-            verdict = await check(self._crisis_classifier, merged)
+            verdict = await check(self._crisis_classifier, merged, turn_id=turn.turn_id)
+            turn.verdict = verdict.value
             if verdict is CrisisVerdict.ACUTE:
                 # The clinic's text, verbatim: the model never gets a turn to
                 # paraphrase a crisis message.
@@ -85,16 +90,17 @@ class InboundService:
                 self._messages.add_outbound(
                     key, outbound_id, self._crisis_message, datetime.now(UTC)
                 )
-                log.warning(
-                    "inbound_turn",
-                    extra={"message_id": message.id, "muted": True, "outcome": "crisis"},
-                )
+                turn.finish(log.warning, muted=True, outcome="crisis", chunks=1)
                 return
             directives = self._crisis_directives if adds_crisis_directives(verdict) else None
+            turn.directives = directives is not None
             reply = (
-                await self._responder(key, merged, directives) if self._responder else self._reply
+                await self._responder(key, merged, directives, turn.turn_id)
+                if self._responder
+                else self._reply
             )
-            for chunk in split_reply(reply):
+            chunks = split_reply(reply)
+            for chunk in chunks:
                 outbound_id = await self._channel.send_text(
                     payload.phone_number_id, key.contact_phone, chunk
                 )
@@ -107,14 +113,14 @@ class InboundService:
                 self._messages.add_outbound(key, outbound_id, FALLBACK, datetime.now(UTC))
             except KapsoError:
                 pass
-            log.error(
-                "inbound_turn",
-                extra={"message_id": message.id, "muted": False, "outcome": "send_failed"},
-            )
+            turn.finish(log.error, muted=False, outcome="send_failed")
             return
-        log.info(
-            "inbound_turn", extra={"message_id": message.id, "muted": False, "outcome": "sent"}
-        )
+        except DomainError as exc:
+            # The store or the model gave up mid-turn. Without this the turn
+            # vanished from the logs and the patient just never got an answer.
+            turn.finish(log.error, muted=False, outcome="failed", error=type(exc).__name__)
+            raise
+        turn.finish(log.info, muted=False, outcome="sent", chunks=len(chunks))
         await self._compact(key)
 
     async def _compact(self, key: ContactKey) -> None:
@@ -125,6 +131,35 @@ class InboundService:
             await self._compactor(key)
         except DomainError:
             log.error("compaction_failed", extra={"stage": "inbound"})
+
+
+class _Turn:
+    """Accumulates the wide event of SPEC §11 — one log line per turn.
+
+    One line with everything beats five lines that have to be stitched: the
+    question being answered is always "what happened to this turn, and where
+    did it stop", and `turn_id` joins it to the `llm_trace` rows.
+    """
+
+    def __init__(self, *, turn_id: str, message_id: str, merged: int) -> None:
+        self.turn_id, self.message_id, self.merged = turn_id, message_id, merged
+        self.verdict: str | None = None
+        self.directives = False
+        self._started = time.monotonic()
+
+    def finish(self, emit, **fields: object) -> None:
+        emit(
+            "inbound_turn",
+            extra={
+                "turn_id": self.turn_id,
+                "message_id": self.message_id,
+                "merged_messages": self.merged,
+                "crisis_verdict": self.verdict,
+                "crisis_directives": self.directives,
+                "duration_ms": int((time.monotonic() - self._started) * 1000),
+                **fields,
+            },
+        )
 
 
 def _timestamp(value: str) -> datetime:

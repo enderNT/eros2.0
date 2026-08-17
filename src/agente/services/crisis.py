@@ -23,7 +23,7 @@ from ..ports.model import Model
 
 log = logging.getLogger(__name__)
 
-Classifier = Callable[[str], Awaitable[CrisisVerdict]]
+Classifier = Callable[[str, str | None], Awaitable[CrisisVerdict]]
 
 TIMEOUT_SECONDS = 8.0
 TOOL_NAME = "clasificar_riesgo"
@@ -62,11 +62,12 @@ TOOL: dict[str, Any] = {
 def make_classifier(model: Model) -> Classifier:
     """Bind the pre-gate to a model port (a Haiku client in the composition root)."""
 
-    async def classify(text: str) -> CrisisVerdict:
+    async def classify(text: str, turn_id: str | None = None) -> CrisisVerdict:
         reply = await model.complete(
             [{"type": "text", "text": SYSTEM}],
             [{"role": "user", "content": text}],
             [TOOL],
+            turn_id=turn_id,
         )
         for use in reply.tool_uses:
             if use.name == TOOL_NAME:
@@ -84,12 +85,16 @@ def parse_verdict(value: Any) -> CrisisVerdict:
 
 
 async def check(
-    classifier: Classifier | None, text: str, *, timeout: float = TIMEOUT_SECONDS
+    classifier: Classifier | None,
+    text: str,
+    *,
+    turn_id: str | None = None,
+    timeout: float = TIMEOUT_SECONDS,
 ) -> CrisisVerdict:
     if classifier is None:
         return CrisisVerdict.NONE
     try:
-        return await asyncio.wait_for(classifier(text), timeout)
+        return await asyncio.wait_for(classifier(text, turn_id), timeout)
     except (DomainError, TimeoutError, RuntimeError, ValueError):
-        log.error("crisis_check_failed")
+        log.error("crisis_check_failed", extra={"turn_id": turn_id})
         return CrisisVerdict.POSSIBLE

@@ -150,8 +150,26 @@ quality rubric. Read it before touching anything that talks to a patient.
 
 ## Gotchas worth remembering
 
-- The Kapso account is **live production**. Never run `kapso push`, never send a real
-  WhatsApp message from a task.
+- **El número de pruebas es el correcto y es deliberado.** `scripts/e2e.py` manda WhatsApp
+  de verdad al contacto de prueba: eso es el punto del arnés, no un accidente. No hay que
+  advertirlo cada vez ni tratarlo como un bloqueo. Lo que sigue vetado es distinto:
+  `kapso push`, tocar la configuración de la cuenta, y mandarle mensajes a alguien que no
+  sea el contacto de prueba.
+- **Observabilidad:** cada turno genera un `turn_id` que va en el evento ancho
+  (`inbound_turn`, una línea por turno con veredicto de crisis, duración, chunks y
+  desenlace) **y** en cada fila de `llm_trace` de ese turno, incluida la del clasificador.
+  Es lo que permite responder "dónde se rompió". `scripts/e2e.py traces` agrupa por ahí.
+- `docker compose up -d --build` puede reconstruir la imagen **sin recrear el contenedor**,
+  y entonces sigue corriendo el código viejo sin avisar. Usar `--force-recreate`, o
+  verificar antes de concluir que un cambio "no funcionó".
+- El panel tiene **«Borrar historial» por contacto** (`POST /admin/reset`,
+  `adapters/store/purge.py`): borra mensajes, resumen, perfil, citas, tokens, mute y el
+  contacto en **una sola transacción** —un borrado a medias dejaría al agente hablando de
+  una conversación que el paciente ya no ve— con `hx-confirm` antes y una fila
+  `contact_purged` en el audit. No toca Calendly ni Kapso. Equivale a `e2e.py reset`.
+- El arnés local (`scripts/e2e.py`, montado en el contenedor) ejercita el ciclo completo
+  contra el servicio corriendo, con las firmas reales de Kapso y de Calendly:
+  `msg` / `tokens` / `book` / `cancel` / `state` / `reset`.
 - The codebase-memory graph was reindexed at T2 and now describes the v3 tree;
   reindex again after changes that add, remove or rename modules.
 - `Knowledge.find_sections` matches the query against wiki **headings only**, not bodies.

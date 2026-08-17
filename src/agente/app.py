@@ -53,7 +53,11 @@ log = logging.getLogger(__name__)
 # stops a runaway generation from costing a full conversation's budget.
 _SUMMARY_MAX_TOKENS = 512
 # The crisis pre-gate answers with a single tool call carrying one enum value.
-_CRISIS_MAX_TOKENS = 64
+# 64 was not enough: a call was observed stopping at `max_tokens`, which
+# truncates the tool block and makes the gate fall back to `possible` for a
+# budget reason rather than a clinical one. Headroom is cheaper than a wrong
+# verdict on every turn.
+_CRISIS_MAX_TOKENS = 256
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

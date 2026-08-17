@@ -52,10 +52,20 @@ def confirmation_text(slot_utc: datetime, timezone: str, now: datetime, address:
     address is worse than no address.
     """
     label = slot_label(Slot(slot_utc, slot_utc), ZoneInfo(timezone), now)
-    text = f"¡Listo! Tu cita quedó confirmada: {label}."
+    parts = [_sentence(f"¡Listo! Tu cita quedó confirmada: {label}")]
     if address:
-        text += f" La dirección es {address}."
-    return f"{text} Si necesitas cambiarla, escríbeme por aquí."
+        parts.append(_sentence(f"La dirección es {address}"))
+    parts.append("Si necesitas cambiarla, escríbeme por aquí.")
+    return " ".join(parts)
+
+
+def _sentence(text: str) -> str:
+    """Close the sentence without doubling the period.
+
+    Both halves can already end in one: the time label ends in "p. m." and the
+    configured address is written by a human who may or may not punctuate it.
+    """
+    return text if text.rstrip().endswith((".", "!", "?")) else f"{text}."
 
 
 class BookingService:

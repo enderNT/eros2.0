@@ -142,6 +142,12 @@ async def test_a_failed_notification_keeps_the_appointment(db_conn, booking):
     assert SqliteAppointmentsRepository(db_conn).find(EVENT) is not None
 
 
+def test_the_confirmation_never_doubles_a_period():
+    """The time label ends in "p. m." and the address may end in one too."""
+    text = confirmation_text(SLOT, "America/Mexico_City", NOW, "Sócrates 128, Polanco.")
+    assert ".." not in text
+
+
 def test_the_confirmation_localizes_across_a_dst_transition():
     """The clinic zone has no DST, but the confirmation must not assume that.
 

@@ -6,8 +6,15 @@ services:
       - "8000:8000"
     volumes:
       - agente-data:/data
+      # Local test harness, mounted rather than baked in: it changes far more
+      # often than the image and must never ship inside it.
+      - ./scripts:/app/scripts:ro
     environment:
       DB_PATH: /data/agente.db
       CONTENT_DIR: /app/content
+      # Local only. Empty means /webhook/calendly rejects everything, which is
+      # right in production and useless for testing, so local gets a fixed key.
+      # Coolify sets the real one from Calendly.
+      CALENDLY_SIGNING_KEY: ${CALENDLY_SIGNING_KEY:-local-dev-signing-key}
 volumes:
   agente-data:

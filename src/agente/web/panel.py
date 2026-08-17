@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from ..adapters.store.mutes import SqliteMutesRepository
+from ..adapters.store.purge import SqlitePurgeRepository
 from ..adapters.store.traces import SqliteTracesRepository
 from ..domain.contacts import ContactKey, mask_phone
 from ..domain.errors import KapsoError
@@ -148,6 +149,29 @@ async def contact_mute(request: Request) -> HTMLResponse:
         request,
         "contact_mute_toggle.html",
         {"key": key, "mute_state": repo.contact_mute(key)},
+    )
+
+
+@router.post(
+    "/admin/reset", response_class=HTMLResponse, dependencies=[Depends(require_panel_session)]
+)
+async def contact_reset(request: Request) -> HTMLResponse:
+    """Erase everything stored about one contact. Irreversible, and audited."""
+    form, now = await _form(request), datetime.now(UTC)
+    key = ContactKey(form["phone_number_id"], form["contact_phone"])
+    removed = SqlitePurgeRepository(request.app.state.db).contact(
+        key, now, actor=panel_actor(), reason="panel"
+    )
+    return templates.TemplateResponse(
+        request,
+        "contact_controls.html",
+        # The purge cleared the mute too, so the toggle below it is redrawn
+        # from the store rather than assumed.
+        {
+            "key": key,
+            "mute_state": _mutes(request).contact_mute(key),
+            "purged": sum(removed.values()),
+        },
     )
 
 

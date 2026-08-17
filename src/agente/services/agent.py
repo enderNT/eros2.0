@@ -89,7 +89,13 @@ class AgentResponder:
         )
         self._messages, self._summaries, self._window_limit = messages, summaries, window_limit
 
-    async def __call__(self, key: ContactKey, text: str, directives: str | None = None) -> str:
+    async def __call__(
+        self,
+        key: ContactKey,
+        text: str,
+        directives: str | None = None,
+        turn_id: str | None = None,
+    ) -> str:
         definitions, handlers = self._tools_for_contact(key)
         summary = self._summaries.get(key) if self._summaries is not None else None
         previous_tools = self._agent._tools
@@ -101,6 +107,7 @@ class AgentResponder:
                 ),
                 self._history(key, summary, text),
                 definitions,
+                turn_id=turn_id,
             )
         finally:
             self._agent._tools = previous_tools

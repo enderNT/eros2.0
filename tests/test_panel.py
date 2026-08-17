@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
+from agente.adapters.store.messages import SqliteMessagesRepository
 from agente.adapters.store.mutes import SqliteMutesRepository
 from agente.app import create_app
 from agente.domain.contacts import ContactKey, mask_phone
@@ -124,3 +125,60 @@ def test_conversations_without_a_phone_are_not_merged_together():
     rows, counts = one_row_per_contact(anonymous)
     assert len(rows) == 2
     assert counts == {"c1": 1, "c2": 1}
+
+
+def test_reset_requires_a_session(settings):
+    with TestClient(create_app(settings)) as client:
+        response = client.post(
+            "/admin/reset",
+            data={"phone_number_id": "1087343774471931", "contact_phone": "+12052943796"},
+        )
+    assert response.status_code == 401
+
+
+def test_reset_erases_the_contact_and_audits_it(settings):
+    """Everything about the contact goes, in one transaction, with a trail."""
+    key = ContactKey("1087343774471931", "+12052943796")
+    now = datetime(2026, 8, 16, 12, tzinfo=UTC)
+    app = create_app(settings)
+    with TestClient(app) as client:
+        messages = SqliteMessagesRepository(app.state.db)
+        messages.add_inbound(key, "in-1", "hola", now)
+        messages.add_outbound(key, "out-1", "buenas", now)
+        SqliteMutesRepository(app.state.db).set_mute(key, now, actor="test", reason="test")
+        app.state.channel = FakeChannel()
+        _login(client)
+
+        response = client.post(
+            "/admin/reset",
+            data={"phone_number_id": key.phone_number_id, "contact_phone": key.contact_phone},
+        )
+        assert response.status_code == 200
+        assert messages.window(key, 10) == []
+        mutes = SqliteMutesRepository(app.state.db)
+        assert mutes.contact_mute(key) is None
+        assert any(entry.action == "contact_purged" for entry in mutes.audit_trail())
+
+
+def test_reset_on_a_contact_with_nothing_stored_is_harmless(settings):
+    key = ContactKey("1087343774471931", "+12052943796")
+    app = create_app(settings)
+    with TestClient(app) as client:
+        app.state.channel = FakeChannel()
+        _login(client)
+        response = client.post(
+            "/admin/reset",
+            data={"phone_number_id": key.phone_number_id, "contact_phone": key.contact_phone},
+        )
+    assert response.status_code == 200
+    assert "No había nada guardado" in response.text
+
+
+def test_the_contact_row_offers_the_reset_button(settings):
+    app = create_app(settings)
+    with TestClient(app) as client:
+        app.state.channel = FakeChannel()
+        _login(client)
+        body = client.get("/admin").text
+    assert "/admin/reset" in body
+    assert "hx-confirm" in body

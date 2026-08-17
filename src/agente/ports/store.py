@@ -219,6 +219,12 @@ class BookingTokensRepository(Protocol):
     def resolve(self, token: str) -> BookingTokenRow | None: ...
 
 
+class PurgeRepository(Protocol):
+    def contact(
+        self, key: ContactKey, now: datetime, *, actor: str, reason: str
+    ) -> dict[str, int]: ...
+
+
 class TracesRepository(Protocol):
     def add(self, trace: LlmTraceRow) -> int: ...
 

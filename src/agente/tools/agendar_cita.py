@@ -35,8 +35,19 @@ NO_LINK = "No tengo el enlace de ese horario. Ofrece otro o escala a una persona
 
 
 def link_instructions(url: str) -> str:
+    """What the model reads after a successful handover.
+
+    The "copy it whole" rule is not stylistic. The `utm_content` parameter is
+    the only thing that tells the webhook whose booking came back; a model that
+    tidies the URL by dropping the query string silently breaks attribution,
+    and the failure is invisible — the patient books fine and we never learn.
+    Observed happening, hence the emphasis.
+    """
     return (
-        f"Envíale este enlace para que confirme el horario: {url}\n"
+        f"Envíale este enlace EXACTO, copiado completo y sin modificar:\n{url}\n"
+        "No lo acortes, no le quites nada después del signo '?', no lo reescribas"
+        " ni lo pongas en un texto con formato de enlace. Si le quitas la parte"
+        " final, la cita no se podrá asociar a este paciente.\n"
         "IMPORTANTE: la cita NO está agendada todavía. Ahí completa su nombre y correo."
         " No le digas que ya quedó confirmada; pídele que te avise cuando termine."
     )

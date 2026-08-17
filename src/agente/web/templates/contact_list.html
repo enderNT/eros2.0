@@ -32,7 +32,7 @@
     {% else %}{{ row.status or "—" }}{% endif %}
   </td>
 </tr>
-{% if row.contact_phone %}<tr><td colspan="3"><div>{% set key = namespace(phone_number_id=request.app.state.settings.kapso_phone_number_id, contact_phone=row.contact_phone) %}{% set mute_state = mute_states[row.contact_phone] %}{% include "contact_mute_toggle.html" %}</div></td></tr>{% endif %}
+{% if row.contact_phone %}<tr><td colspan="3">{% set key = namespace(phone_number_id=request.app.state.settings.kapso_phone_number_id, contact_phone=row.contact_phone) %}{% set mute_state = mute_states[row.contact_phone] %}{% set purged = none %}{% include "contact_controls.html" %}</td></tr>{% endif %}
 {% else %}<tr><td colspan="3">No hay conversaciones.</td></tr>{% endfor %}
   </tbody>
 </table>

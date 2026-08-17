@@ -136,7 +136,7 @@ async def test_acute_writes_an_urgent_audit_entry(db_conn):
 async def test_possible_hands_the_playbook_directives_to_the_agent(db_conn):
     seen = []
 
-    async def responder(_key, _text, directives):
+    async def responder(_key, _text, directives, _turn_id):
         seen.append(directives)
         return "te escucho"
 
@@ -158,7 +158,7 @@ async def test_possible_hands_the_playbook_directives_to_the_agent(db_conn):
 async def test_none_proceeds_without_directives(db_conn):
     seen = []
 
-    async def responder(_key, _text, directives):
+    async def responder(_key, _text, directives, _turn_id):
         seen.append(directives)
         return "claro"
 
@@ -174,6 +174,32 @@ async def test_none_proceeds_without_directives(db_conn):
     )
     await service.handle(_payload("none-1", text="¿cuánto cuesta la consulta?"))
     assert seen == [None]
+
+
+@pytest.mark.asyncio
+async def test_the_crisis_call_and_the_agent_share_one_turn_id(db_conn):
+    """Correlation is the point: both model calls of a turn must be joinable."""
+    seen = {}
+
+    async def classifier(_text, turn_id):
+        seen["crisis"] = turn_id
+        return CrisisVerdict.NONE
+
+    async def responder(_key, _text, _directives, turn_id):
+        seen["agent"] = turn_id
+        return "hola"
+
+    service = InboundService(
+        SqliteMessagesRepository(db_conn),
+        SqliteMutesRepository(db_conn),
+        FakeChannel(),
+        responder=responder,
+        crisis_classifier=classifier,
+        crisis_message=CRISIS_TEXT,
+        debounce_seconds=0,
+    )
+    await service.handle(_payload("turn-1"))
+    assert seen["crisis"] and seen["crisis"] == seen["agent"]
 
 
 def test_directives_become_a_fourth_system_block_without_a_cache_breakpoint():
