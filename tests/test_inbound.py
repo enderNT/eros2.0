@@ -1,0 +1,69 @@
+from datetime import UTC, datetime
+
+import pytest
+
+from agente.adapters.kapso.payloads import KapsoMessage, KapsoMessageText, WebhookPayload
+from agente.adapters.store.messages import SqliteMessagesRepository
+from agente.adapters.store.mutes import SqliteMutesRepository
+from agente.domain.contacts import ContactKey
+from agente.domain.errors import KapsoError
+from agente.services.inbound import FALLBACK, InboundService
+
+
+class FakeChannel:
+    def __init__(self, failures: int = 0) -> None:
+        self.failures, self.sent = failures, []
+
+    async def send_text(self, _phone_id: str, to: str, body: str) -> str:
+        self.sent.append((to, body))
+        if self.failures:
+            self.failures -= 1
+            raise KapsoError("failed")
+        return f"out-{len(self.sent)}"
+
+
+def _payload(message_id: str, text: str = "hola") -> WebhookPayload:
+    return WebhookPayload(
+        message=KapsoMessage(
+            id=message_id,
+            timestamp="2026-08-16T12:00:00Z",
+            type="text",
+            **{"from": "+12052943796"},
+            text=KapsoMessageText(body=text),
+        ),
+        conversation={"id": "c1"},
+        phone_number_id="1087343774471931",
+    )
+
+
+@pytest.mark.asyncio
+async def test_duplicate_produces_one_reply(db_conn):
+    channel = FakeChannel()
+    service = InboundService(
+        SqliteMessagesRepository(db_conn), SqliteMutesRepository(db_conn), channel
+    )
+    await service.handle(_payload("in-1"))
+    await service.handle(_payload("in-1"))
+    assert len(channel.sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_muted_inbound_is_stored_without_send(db_conn):
+    messages, mutes = SqliteMessagesRepository(db_conn), SqliteMutesRepository(db_conn)
+    key = ContactKey("1087343774471931", "+12052943796")
+    now = datetime(2026, 8, 16, tzinfo=UTC)
+    mutes.set_mute(key, now, actor="test", reason="test")
+    channel = FakeChannel()
+    await InboundService(messages, mutes, channel).handle(_payload("in-2"))
+    assert channel.sent == []
+    assert len(messages.window(key, 10)) == 1
+
+
+@pytest.mark.asyncio
+async def test_send_failure_uses_single_fallback_without_retry(db_conn):
+    channel = FakeChannel(failures=1)
+    await InboundService(
+        SqliteMessagesRepository(db_conn), SqliteMutesRepository(db_conn), channel
+    ).handle(_payload("in-3"))
+    assert len(channel.sent) == 2
+    assert channel.sent[-1][1] == FALLBACK

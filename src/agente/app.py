@@ -24,6 +24,7 @@ from .logging_setup import setup_logging
 from .web.health import router as health_router
 from .web.panel import mount_static
 from .web.panel import router as panel_router
+from .web.webhooks import router as webhooks_router
 
 if TYPE_CHECKING:
     import sqlite3
@@ -50,6 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="agente", lifespan=lifespan)
     app.include_router(health_router)
     app.include_router(panel_router)
+    app.include_router(webhooks_router)
     mount_static(app)
     return app
 
