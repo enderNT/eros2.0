@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 from ..adapters.kapso.payloads import WebhookPayload
@@ -26,9 +27,11 @@ class InboundService:
         channel: Channel,
         *,
         reply: str = "Gracias por tu mensaje.",
+        responder: Callable[[ContactKey, str], Awaitable[str]] | None = None,
         debounce_seconds: float = 4.0,
     ) -> None:
         self._messages, self._mutes, self._channel, self._reply = messages, mutes, channel, reply
+        self._responder = responder
         self._debounce_seconds = debounce_seconds
         self._pending: dict[ContactKey, list[WebhookPayload]] = {}
         self._pending_lock = asyncio.Lock()
@@ -61,7 +64,9 @@ class InboundService:
             )
             return
         try:
-            for chunk in split_reply(self._reply):
+            merged = "\n".join(_text(item) for item in batch)
+            reply = await self._responder(key, merged) if self._responder else self._reply
+            for chunk in split_reply(reply):
                 outbound_id = await self._channel.send_text(
                     payload.phone_number_id, key.contact_phone, chunk
                 )

@@ -226,7 +226,9 @@ wording, and a wiki with a malformed heading not crashing the loader.
 
 Acceptance: `pytest -q` green; swapping the wiki file changes the TOC with no code change.
 
-## [ ] T8 — Anthropic adapter and the agent loop
+## [x] T8 — Anthropic adapter and the agent loop
+
+→ result: Anthropic adapter, trace persistence, bounded tool loop and inbound responder integration live.
 
 Needs T3, T7. §5, §11. The heart of the migration.
 
