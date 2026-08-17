@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -30,6 +31,8 @@ from .logging_setup import setup_logging
 from .services.agent import Agent, AgentResponder
 from .services.inbound import InboundService
 from .services.knowledge import Knowledge
+from .tools.buscar_wiki import buscar_wiki
+from .tools.escalar_a_humano import escalar_a_humano
 from .web.health import router as health_router
 from .web.panel import mount_static
 from .web.panel import router as panel_router
@@ -61,6 +64,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             Agent(model, {}, max_iterations=cfg.anthropic_max_iterations),
             Knowledge.load(content_root / "playbook.md", content_root / "wiki.md"),
             SqliteContactsRepository(app.state.db),
+            lambda key: _agent_tools(app, key),
         )
         app.state.inbound = InboundService(
             SqliteMessagesRepository(app.state.db),
@@ -108,3 +112,35 @@ def _open_database(cfg: Settings) -> sqlite3.Connection | None:
 
 
 app = create_app()
+
+
+def _agent_tools(app: FastAPI, key):
+    knowledge = Knowledge.load(
+        Path(__file__).parents[2] / "content" / "playbook.md",
+        Path(__file__).parents[2] / "content" / "wiki.md",
+    )
+    return [
+        {
+            "name": "buscar_wiki",
+            "description": "Busca datos confirmados de clínica.",
+            "input_schema": {
+                "type": "object",
+                "properties": {"consulta": {"type": "string"}},
+                "required": ["consulta"],
+            },
+        },
+        {
+            "name": "escalar_a_humano",
+            "description": "Pide seguimiento humano cuando sea necesario.",
+            "input_schema": {
+                "type": "object",
+                "properties": {"motivo": {"type": "string"}},
+                "required": ["motivo"],
+            },
+        },
+    ], {
+        "buscar_wiki": lambda data: buscar_wiki(knowledge, data["consulta"]),
+        "escalar_a_humano": lambda data: escalar_a_humano(
+            SqliteMutesRepository(app.state.db), key, data["motivo"], datetime.now(UTC)
+        ),
+    }

@@ -57,15 +57,28 @@ class Agent:
 class AgentResponder:
     """Adapts a contact/text inbound turn to the model-facing agent."""
 
-    def __init__(self, agent: Agent, knowledge: Knowledge, contacts: ContactsRepository) -> None:
-        self._agent, self._knowledge, self._contacts = agent, knowledge, contacts
+    def __init__(
+        self, agent: Agent, knowledge: Knowledge, contacts: ContactsRepository, tools_for_contact
+    ) -> None:
+        self._agent, self._knowledge, self._contacts, self._tools_for_contact = (
+            agent,
+            knowledge,
+            contacts,
+            tools_for_contact,
+        )
 
     async def __call__(self, key: ContactKey, text: str) -> str:
-        return await self._agent.reply(
-            system_blocks(self._knowledge, self._contacts.get_profile(key), None),
-            [{"role": "user", "content": text}],
-            [],
-        )
+        definitions, handlers = self._tools_for_contact(key)
+        previous_tools = self._agent._tools
+        self._agent._tools = handlers
+        try:
+            return await self._agent.reply(
+                system_blocks(self._knowledge, self._contacts.get_profile(key), None),
+                [{"role": "user", "content": text}],
+                definitions,
+            )
+        finally:
+            self._agent._tools = previous_tools
 
 
 def system_blocks(
