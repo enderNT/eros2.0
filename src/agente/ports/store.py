@@ -109,6 +109,12 @@ class OutboxRow:
     slot_utc: datetime | None
 
 
+class RuntimeSettingsRepository(Protocol):
+    def booking_followup_minutes(self, default: int) -> int: ...
+
+    def set_booking_followup_minutes(self, minutes: int, now: datetime) -> None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class LlmTraceRow:
     turn_id: str | None

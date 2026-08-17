@@ -5,6 +5,7 @@
 <header><h1>Conversaciones</h1></header>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 <div id="kill-switch">{% include "global_kill_switch.html" %}</div>
+<div id="booking-followup">{% include "booking_followup_control.html" %}</div>
 {% set phone_number_id = request.app.state.settings.kapso_phone_number_id %}
 {% set number_muted = number_muted %}
 <div id="number-switch">{% include "number_mute_toggle.html" %}</div>

@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from agente.adapters.store.messages import SqliteMessagesRepository
 from agente.adapters.store.mutes import SqliteMutesRepository
+from agente.adapters.store.settings import SqliteRuntimeSettingsRepository
 from agente.app import create_app
 from agente.domain.contacts import ContactKey, mask_phone
 from agente.ports.channel import ConversationList, ConversationRow
@@ -83,7 +84,31 @@ def test_number_and_global_mutes_round_trip(settings):
         )
         global_response = client.post("/admin/global", data={"muted": "true"})
         assert "Desmutar número" in number.text
-        assert "Activar bot" in global_response.text
+        assert "El bot está apagado para todos." in global_response.text
+
+
+def test_booking_followup_control_round_trip(settings):
+    with TestClient(create_app(settings)) as client:
+        _login(client)
+        page = client.get("/admin")
+        assert 'type="range"' in page.text
+        assert 'min="0"' in page.text
+        assert 'max="90"' in page.text
+        assert '<select id="booking-followup-stepper"' in page.text
+        assert 'id="global-change-dialog"' in page.text
+        assert 'class="global-save" type="submit" hidden' in page.text
+        assert 'onsubmit="return confirmGlobalChange(this)"' in page.text
+        response = client.post(
+            "/admin/booking-followup", data={"minutes": "10", "slider_step": "5"}
+        )
+        assert response.status_code == 200
+        assert 'step="5"' in response.text
+        assert "18 pasos de 5 min" in response.text
+        runtime = SqliteRuntimeSettingsRepository(client.app.state.db)
+        assert runtime.booking_followup_minutes(default=90) == 10
+
+        invalid = client.post("/admin/booking-followup", data={"minutes": "91"})
+        assert 'value="10"' in invalid.text
 
 
 def test_one_row_per_contact_keeps_the_most_recent_conversation():

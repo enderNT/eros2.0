@@ -13,6 +13,11 @@ from fastapi.templating import Jinja2Templates
 
 from ..adapters.store.mutes import SqliteMutesRepository
 from ..adapters.store.purge import SqlitePurgeRepository
+from ..adapters.store.settings import (
+    MAX_BOOKING_FOLLOWUP_MINUTES,
+    MIN_BOOKING_FOLLOWUP_MINUTES,
+    SqliteRuntimeSettingsRepository,
+)
 from ..adapters.store.traces import SqliteTracesRepository
 from ..domain.contacts import ContactKey, mask_phone
 from ..domain.errors import KapsoError
@@ -23,6 +28,7 @@ router = APIRouter()
 _ROOT = Path(__file__).parent
 templates = Jinja2Templates(directory=str(_ROOT / "templates"))
 templates.env.globals["mask_phone"] = mask_phone
+_SLIDER_STEPS = (1, 2, 3, 5, 6, 9, 10, 15, 18, 30, 45, 90)
 
 
 def mount_static(app) -> None:  # type: ignore[no-untyped-def]
@@ -75,6 +81,24 @@ def _mutes(request: Request) -> SqliteMutesRepository:
     return SqliteMutesRepository(request.app.state.db)
 
 
+def _runtime_settings(request: Request) -> SqliteRuntimeSettingsRepository:
+    return SqliteRuntimeSettingsRepository(request.app.state.db)
+
+
+def _booking_followup_minutes(request: Request) -> int:
+    return _runtime_settings(request).booking_followup_minutes(
+        request.app.state.settings.booking_followup_minutes
+    )
+
+
+def _slider_step(value: str) -> int:
+    try:
+        step = int(value)
+    except ValueError:
+        return 1
+    return step if step in _SLIDER_STEPS else 1
+
+
 @router.get("/admin/login", response_class=HTMLResponse)
 async def login_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "login_fragment.html", {"error": None})
@@ -122,6 +146,10 @@ async def panel(request: Request) -> HTMLResponse:
             "global_muted": mutes.global_mute() is not None,
             "number_muted": mutes.number_mute(request.app.state.settings.kapso_phone_number_id)
             is not None,
+            "booking_followup_minutes": _booking_followup_minutes(request),
+            "booking_followup_slider_step": 1,
+            "booking_followup_steps": _SLIDER_STEPS,
+            "booking_followup_step_count": MAX_BOOKING_FOLLOWUP_MINUTES,
             "error": error,
         },
     )
@@ -210,6 +238,33 @@ async def global_mute(request: Request) -> HTMLResponse:
         until=_until(form.get("expires_in", ""), now),
     )
     return templates.TemplateResponse(request, "global_kill_switch.html", {"global_muted": muted})
+
+
+@router.post(
+    "/admin/booking-followup",
+    response_class=HTMLResponse,
+    dependencies=[Depends(require_panel_session)],
+)
+async def booking_followup(request: Request) -> HTMLResponse:
+    form = await _form(request)
+    try:
+        minutes = int(form.get("minutes", ""))
+        _runtime_settings(request).set_booking_followup_minutes(minutes, datetime.now(UTC))
+    except ValueError:
+        minutes = _booking_followup_minutes(request)
+    slider_step = _slider_step(form.get("slider_step", "1"))
+    return templates.TemplateResponse(
+        request,
+        "booking_followup_control.html",
+        {
+            "booking_followup_minutes": minutes,
+            "booking_followup_min": MIN_BOOKING_FOLLOWUP_MINUTES,
+            "booking_followup_max": MAX_BOOKING_FOLLOWUP_MINUTES,
+            "booking_followup_slider_step": slider_step,
+            "booking_followup_steps": _SLIDER_STEPS,
+            "booking_followup_step_count": MAX_BOOKING_FOLLOWUP_MINUTES // slider_step,
+        },
+    )
 
 
 @router.get(

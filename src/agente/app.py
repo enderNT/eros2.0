@@ -13,7 +13,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
@@ -28,6 +28,7 @@ from .adapters.store.contacts import SqliteContactsRepository
 from .adapters.store.messages import SqliteMessagesRepository
 from .adapters.store.mutes import SqliteMutesRepository
 from .adapters.store.outbox import SqliteOutboxRepository
+from .adapters.store.settings import SqliteRuntimeSettingsRepository
 from .adapters.store.summaries import SqliteSummariesRepository
 from .adapters.store.traces import SqliteTracesRepository
 from .config import Settings, load_settings
@@ -82,6 +83,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         appointments = SqliteAppointmentsRepository(app.state.db)
         app.state.booking_tokens = SqliteBookingTokensRepository(app.state.db)
         outbox = SqliteOutboxRepository(app.state.db)
+        runtime_settings = SqliteRuntimeSettingsRepository(app.state.db)
+        app.state.runtime_settings = runtime_settings
         model = AnthropicClient(
             cfg.anthropic_api_key,
             cfg.anthropic_model_conversation,
@@ -139,7 +142,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             mutes=SqliteMutesRepository(app.state.db),
             channel=app.state.channel,
             timezone=cfg.calendly_timezone,
-            delay=timedelta(minutes=cfg.booking_followup_minutes),
+            delay_minutes=lambda: runtime_settings.booking_followup_minutes(
+                cfg.booking_followup_minutes
+            ),
         )
         app.state.booking_followups = followups
         app.state.inbound = InboundService(

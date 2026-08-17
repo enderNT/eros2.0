@@ -36,12 +36,12 @@ class BookingFollowups:
         mutes: MutesRepository,
         channel: Channel,
         timezone: str,
-        delay: timedelta = timedelta(minutes=90),
+        delay_minutes: Callable[[], int] = lambda: 90,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._outbox, self._tokens, self._appointments = outbox, booking_tokens, appointments
         self._messages, self._mutes, self._channel = messages, mutes, channel
-        self._timezone, self._delay, self._now = ZoneInfo(timezone), delay, now
+        self._timezone, self._delay_minutes, self._now = ZoneInfo(timezone), delay_minutes, now
 
     def schedule_from_outbound(self, key: ContactKey, text: str, sent_at: datetime) -> None:
         token = _booking_token(text)
@@ -53,7 +53,11 @@ class BookingFollowups:
         label = slot_label(Slot(record.slot_utc, record.slot_utc), self._timezone, sent_at)
         followup = f"Hola, ¿pudiste agendar tu cita para {label}?"
         self._outbox.schedule_booking_followup(
-            key, token, record.slot_utc, followup, sent_at + self._delay
+            key,
+            token,
+            record.slot_utc,
+            followup,
+            sent_at + timedelta(minutes=self._delay_minutes()),
         )
 
     def cancel_for_contact(self, key: ContactKey) -> None:

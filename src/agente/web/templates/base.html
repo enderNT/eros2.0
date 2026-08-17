@@ -9,5 +9,49 @@
 </head>
 <body>
 <div class="page">{% block body %}{% endblock %}</div>
+<dialog id="global-change-dialog" class="confirm-dialog">
+  <form method="dialog">
+    <h2>¿Guardar cambio global?</h2>
+    <p>Este cambio afectará el comportamiento del bot para todos los contactos.</p>
+    <div class="dialog-actions">
+      <button value="cancel" class="secondary">Cancelar</button>
+      <button id="confirm-global-change" type="button">Guardar</button>
+    </div>
+  </form>
+</dialog>
+<script>
+  let pendingGlobalForm = null;
+  function revealGlobalSave(form) {
+    const save = form.querySelector('.global-save');
+    if (!save) return;
+    if (form.elements.minutes) {
+      save.hidden = Number(form.elements.minutes.value) === Number(form.dataset.savedMinutes);
+    } else {
+      save.hidden = form.elements.muted.checked === (form.dataset.savedMuted === 'true');
+    }
+  }
+  function confirmGlobalChange(form) {
+    if (form.dataset.confirmed === 'true') {
+      delete form.dataset.confirmed;
+      return true;
+    }
+    pendingGlobalForm = form;
+    const dialog = document.getElementById('global-change-dialog');
+    if (dialog && dialog.showModal) {
+      dialog.showModal();
+    } else if (window.confirm('¿Guardar cambio global?')) {
+      form.dataset.confirmed = 'true';
+      form.requestSubmit();
+    }
+    return false;
+  }
+  document.getElementById('confirm-global-change').addEventListener('click', function () {
+    if (!pendingGlobalForm) return;
+    pendingGlobalForm.dataset.confirmed = 'true';
+    document.getElementById('global-change-dialog').close();
+    pendingGlobalForm.requestSubmit();
+    pendingGlobalForm = null;
+  });
+</script>
 </body>
 </html>

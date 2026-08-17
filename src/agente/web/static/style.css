@@ -5,11 +5,25 @@ header { margin-bottom: 16px; } h1 { font-size: 1.4rem; }
 .card, .form-action, table { background: white; border-radius: 10px; padding: 14px; margin: 12px 0; width: 100%; }
 form { display: grid; gap: 10px; } input, select, button { min-height: 44px; font: inherit; }
 button { border: 0; border-radius: 8px; padding: 8px 14px; background: #155eef; color: white; }
+button.secondary { background: #e4e7ec; color: #344054; }
 table { border-collapse: collapse; } th, td { text-align: left; padding: 10px 4px; vertical-align: top; border-bottom: 1px solid #ddd; }
 .error { color: #b42318; }.badge { font-size: .85rem; }.muted { color: #b42318; }
 /* Destructive and irreversible: it should not look like the other buttons. */
 button.danger { background: #b42318; }
 .subtle { color: #667085; }
+.range-row { display: grid; grid-template-columns: 1fr 88px; align-items: end; gap: 12px; }
+.range-slider { min-width: 0; }
+.slider-step-count { display: block; margin-bottom: 2px; color: #344054; font-size: .85rem; text-align: center; }
+.range-row input[type="range"] { min-height: 44px; width: 100%; }
+.slider-stepper { display: grid; gap: 2px; color: #667085; font-size: .85rem; }
+.range-row select { width: 88px; }
+.slider-bounds { display: flex; justify-content: space-between; color: #667085; font-size: .75rem; }
+.toggle-row { display: flex; align-items: center; gap: 10px; }
+.toggle-row input { width: 22px; min-height: 22px; }
+.confirm-dialog { max-width: min(420px, calc(100vw - 32px)); border: 0; border-radius: 12px; padding: 0; box-shadow: 0 12px 40px rgb(16 24 40 / .25); }
+.confirm-dialog::backdrop { background: rgb(16 24 40 / .45); }
+.confirm-dialog form { padding: 20px; } .confirm-dialog h2 { margin: 0; font-size: 1.1rem; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
 .badge-active { color: #067647; } .badge-ended { color: #667085; }
 /* Inline help. <details> so a thumb can open it; a hover tooltip is useless on a phone. */
 .hint { display: inline-block; vertical-align: middle; margin-left: 6px; }

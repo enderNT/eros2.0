@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agente.adapters.store import db as store_db
+from agente.adapters.store.settings import SqliteRuntimeSettingsRepository
 from agente.app import create_app
 from agente.domain.errors import StoreError
 
@@ -23,6 +24,7 @@ EXPECTED_TABLES = {
     "booking_token",
     "llm_trace",
     "outbox",
+    "app_setting",
 }
 
 NOW = datetime(2026, 8, 16, 12, 0, tzinfo=UTC)
@@ -55,7 +57,18 @@ def test_migrate_creates_every_table(db_conn):
 
 def test_migrate_records_the_applied_version(db_conn):
     rows = db_conn.execute("SELECT version FROM schema_version").fetchall()
-    assert [row["version"] for row in rows] == [1, 2, 3]
+    assert [row["version"] for row in rows] == [1, 2, 3, 4, 5]
+
+
+def test_runtime_followup_setting_is_global_and_bounded(db_conn):
+    settings = SqliteRuntimeSettingsRepository(db_conn)
+    assert settings.booking_followup_minutes(default=90) == 90
+    settings.set_booking_followup_minutes(1, NOW)
+    assert settings.booking_followup_minutes(default=90) == 1
+    settings.set_booking_followup_minutes(0, NOW)
+    assert settings.booking_followup_minutes(default=90) == 0
+    with pytest.raises(ValueError, match="between 0 and 90"):
+        settings.set_booking_followup_minutes(91, NOW)
 
 
 def test_migrate_is_idempotent_and_preserves_data(db_conn):

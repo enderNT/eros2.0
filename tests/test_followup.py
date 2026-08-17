@@ -41,6 +41,22 @@ def followups(db_conn):
     return service, channel
 
 
+def test_followup_delay_is_read_when_the_link_is_sent(db_conn):
+    minutes = 1
+    service = BookingFollowups(
+        outbox=SqliteOutboxRepository(db_conn),
+        booking_tokens=SqliteBookingTokensRepository(db_conn),
+        appointments=SqliteAppointmentsRepository(db_conn),
+        messages=SqliteMessagesRepository(db_conn),
+        mutes=SqliteMutesRepository(db_conn),
+        channel=FakeChannel(),
+        timezone="America/Mexico_City",
+        delay_minutes=lambda: minutes,
+    )
+    service.schedule_from_outbound(KEY, _issue(db_conn), NOW)
+    assert len(SqliteOutboxRepository(db_conn).due(NOW + timedelta(minutes=1))) == 1
+
+
 def _issue(db_conn, token: str = "tok-1") -> str:
     SqliteBookingTokensRepository(db_conn).issue(token, KEY, SLOT, NOW)
     return f"https://calendly.com/clinic/slot?utm_content={token}"
