@@ -1,0 +1,14 @@
+<div class="form-action">
+  <label><strong>Interruptor global</strong></label>
+  {% if global_muted %}
+  <form hx-post="/admin/global" hx-target="closest .form-action" hx-swap="outerHTML">
+    <input type="hidden" name="muted" value="false">
+    <button type="submit">Activar bot (interruptor global)</button>
+  </form>
+  {% else %}
+  <form hx-post="/admin/global" hx-target="closest .form-action" hx-swap="outerHTML">
+    <input type="hidden" name="muted" value="true">
+    <button type="submit">Desactivar interruptor global</button>
+  </form>
+  {% endif %}
+</div>

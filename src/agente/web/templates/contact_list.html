@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Conversaciones — Panel{% endblock %}
+{% block body %}
+<header><h1>Conversaciones</h1></header>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<div id="kill-switch">{% include "global_kill_switch.html" %}</div>
+{% set phone_number_id = request.app.state.settings.kapso_phone_number_id %}
+{% set number_muted = number_muted %}
+<div id="number-switch">{% include "number_mute_toggle.html" %}</div>
+<table id="conv-list"><thead><tr><th>Contacto</th><th>Última actividad</th><th>Estado</th></tr></thead><tbody>
+{% for row in conversations %}
+<tr><td><strong>{{ row.contact_name or "?" }}</strong><br><small>{{ mask_phone(row.contact_phone) }}</small></td><td><small>{{ row.last_activity_at.strftime("%Y-%m-%d %H:%M") if row.last_activity_at else "—" }}</small></td><td>{{ row.status or "—" }}</td></tr>
+{% if row.contact_phone %}<tr><td colspan="3"><div>{% set key = namespace(phone_number_id=request.app.state.settings.kapso_phone_number_id, contact_phone=row.contact_phone) %}{% set mute_state = mute_states[row.contact_phone] %}{% include "contact_mute_toggle.html" %}</div></td></tr>{% endif %}
+{% else %}<tr><td colspan="3">No hay conversaciones.</td></tr>{% endfor %}
+</tbody></table>
+{% endblock %}

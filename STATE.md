@@ -12,9 +12,9 @@ Keep it short. It is a status, not a history: overwrite stale lines instead of a
 
 ## Phase
 
-**Foundation complete: T1–T4 done; human review required before T5.** Branch
-`v3-rebuild`. Scaffold (T1), the storage foundation (T2), pure domain logic (T3), and the
-Kapso adapter (T4) are in place; everything on `main` remains reference-only.
+**T1–T5 complete; T6 is next.** Branch `v3-rebuild`. Scaffold (T1), storage foundation
+(T2), pure domain logic (T3), Kapso adapter (T4), and local control panel (T5) are in
+place; everything on `main` remains reference-only.
 
 ## What exists right now
 
@@ -50,6 +50,10 @@ Kapso adapter (T4) are in place; everything on `main` remains reference-only.
   safe logs (masked phone, no body). `ports/channel.py` — `Channel` Protocol with
   `send_text` and `list_conversations`; frozen `ConversationRow` dataclass carrying real
   contact phone for mute keying. Tests: 15 payload + 10 client = 25 tests green.
+- **v3 code (T5):** `web/auth.py` signed, expiring panel session; `web/panel.py` and
+  Jinja2/locally served HTMX templates provide the mobile-first admin panel. Conversations
+  are read live from injected Kapso channel; contact, number and global mute actions audit
+  locally; traces remain empty until T8. Tests: 135 total green.
 
 ## Decided since the rewrite started
 

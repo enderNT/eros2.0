@@ -1,0 +1,13 @@
+<div class="form-action">
+  <label><strong>Bot para contacto</strong>{% if mute_state and mute_state.muted_until %} — hasta {{ mute_state.muted_until.strftime("%Y-%m-%d %H:%M") }}{% endif %}</label>
+  <form hx-post="/admin/mute" hx-target="closest .form-action" hx-swap="outerHTML">
+    <input type="hidden" name="phone_number_id" value="{{ key.phone_number_id }}">
+    <input type="hidden" name="contact_phone" value="{{ key.contact_phone }}">
+    {% if mute_state %}
+      <input type="hidden" name="muted" value="false"><button type="submit">Activar bot</button>
+    {% else %}
+      <input type="hidden" name="muted" value="true"><button type="submit">Silenciar bot</button>
+      <select name="expires_in"><option value="">Sin vencimiento</option><option value="3600">1 hora</option><option value="86400">1 día</option></select>
+    {% endif %}
+  </form>
+</div>

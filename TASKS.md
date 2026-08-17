@@ -153,7 +153,11 @@ To lift the barrier, a human moves this block down past the tasks they have appr
 
 ---
 
-## [ ] T5 — Control panel
+## [x] T5 — Control panel
+
+→ result: authenticated mobile-first Jinja2/HTMX panel live — signed expiring session,
+local HTMX/static assets, live Kapso conversation list, contact/number/global mute controls
+with audit and expiry display, and traces placeholder. 3 behavioral panel tests green.
 
 Needs T2 and T4. §3, §11, and the panel decision in `PROJECT.md`.
 

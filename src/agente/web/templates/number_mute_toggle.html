@@ -1,0 +1,16 @@
+<div class="form-action">
+  <label><strong>Número</strong>: {{ phone_number_id | truncate(8) }}</label>
+  {% if number_muted %}
+  <form hx-post="/admin/number-mute" hx-target="closest .form-action" hx-swap="outerHTML">
+    <input type="hidden" name="phone_number_id" value="{{ phone_number_id }}">
+    <input type="hidden" name="muted" value="false">
+    <button type="submit">Desmutar número</button>
+  </form>
+  {% else %}
+  <form hx-post="/admin/number-mute" hx-target="closest .form-action" hx-swap="outerHTML">
+    <input type="hidden" name="phone_number_id" value="{{ phone_number_id }}">
+    <input type="hidden" name="muted" value="true">
+    <button type="submit">Mutar número</button>
+  </form>
+  {% endif %}
+</div>

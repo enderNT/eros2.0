@@ -26,6 +26,10 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agente"]
+include = [
+  "src/agente/web/templates/**",
+  "src/agente/web/static/**",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

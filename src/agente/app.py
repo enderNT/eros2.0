@@ -16,11 +16,14 @@ from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 
+from .adapters.kapso.client import KapsoClient
 from .adapters.store import db as store_db
 from .config import Settings, load_settings
 from .domain.errors import StoreError
 from .logging_setup import setup_logging
 from .web.health import router as health_router
+from .web.panel import mount_static
+from .web.panel import router as panel_router
 
 if TYPE_CHECKING:
     import sqlite3
@@ -36,14 +39,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         _prepare_database_dir(cfg)
         app.state.settings = cfg
         app.state.db = _open_database(cfg)
+        app.state.channel = KapsoClient(cfg.kapso_base_url, cfg.kapso_api_key)
         try:
             yield
         finally:
             if app.state.db is not None:
                 app.state.db.close()
+            await app.state.channel.aclose()
 
     app = FastAPI(title="agente", lifespan=lifespan)
     app.include_router(health_router)
+    app.include_router(panel_router)
+    mount_static(app)
     return app
 
 
