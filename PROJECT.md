@@ -108,6 +108,14 @@ weeks later that the bot was off for a patient. Every flip is written to an audi
 who, when, why — because "why did the bot not answer this person" is a question that will
 be asked about a real patient.
 
+**A handoff does not expire.** When the bot steps aside — a human asks for it, a tool
+fails, the agent decides it cannot help — it stays aside until someone turns it back on
+from the panel, or until some future internal signal explicitly says it may answer again.
+No timeout, no automatic return. Rejected: giving agent-initiated mutes an expiry so a
+transient tool failure resolves itself. It would mean the bot resuming a conversation a
+human may have already picked up, which is exactly the ambiguity the explicit switch
+exists to remove. Consequence accepted: someone has to look at the panel.
+
 **Control panel.** A small internal page served by the same FastAPI app:
 
 - Lists conversations **read live from the Kapso API** (`GET /conversations`, cursor

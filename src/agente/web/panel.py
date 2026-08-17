@@ -15,6 +15,7 @@ from ..adapters.store.mutes import SqliteMutesRepository
 from ..adapters.store.traces import SqliteTracesRepository
 from ..domain.contacts import ContactKey, mask_phone
 from ..domain.errors import KapsoError
+from ..ports.channel import ConversationRow
 from .auth import panel_actor, require_panel_session, set_session
 
 router = APIRouter()
@@ -40,6 +41,33 @@ def _until(value: str, now: datetime) -> datetime | None:
     except ValueError:
         return None
     return now + timedelta(seconds=seconds) if seconds > 0 else None
+
+
+def one_row_per_contact(
+    rows: list[ConversationRow],
+) -> tuple[list[ConversationRow], dict[str, int]]:
+    """Collapse Kapso's conversations into one row per person.
+
+    Kapso ends a conversation after 24h of inactivity and opens a new one
+    with the next message, so the same patient comes back three or four
+    times in the listing. The mute switch is keyed by contact, never by
+    conversation, so the panel shows the contact once — its most recent
+    conversation — plus how many that contact has.
+    """
+    latest: dict[str, ConversationRow] = {}
+    counts: dict[str, int] = {}
+    for row in rows:
+        identity = row.contact_phone or row.conversation_id
+        counts[identity] = counts.get(identity, 0) + 1
+        current = latest.get(identity)
+        if current is None or _activity(row) > _activity(current):
+            latest[identity] = row
+    ordered = sorted(latest.values(), key=_activity, reverse=True)
+    return ordered, counts
+
+
+def _activity(row: ConversationRow) -> datetime:
+    return row.last_activity_at or datetime.min.replace(tzinfo=UTC)
 
 
 def _mutes(request: Request) -> SqliteMutesRepository:
@@ -74,6 +102,7 @@ async def panel(request: Request) -> HTMLResponse:
         ).conversations
     except KapsoError:
         conversations, error = [], "No se pudieron cargar las conversaciones."
+    conversations, conversation_counts = one_row_per_contact(conversations)
     mutes = _mutes(request)
     states = {
         row.contact_phone: mutes.contact_mute(
@@ -87,6 +116,7 @@ async def panel(request: Request) -> HTMLResponse:
         "contact_list.html",
         {
             "conversations": conversations,
+            "conversation_counts": conversation_counts,
             "mute_states": states,
             "global_muted": mutes.global_mute() is not None,
             "number_muted": mutes.number_mute(request.app.state.settings.kapso_phone_number_id)

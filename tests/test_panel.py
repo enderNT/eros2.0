@@ -83,3 +83,44 @@ def test_number_and_global_mutes_round_trip(settings):
         global_response = client.post("/admin/global", data={"muted": "true"})
         assert "Desmutar número" in number.text
         assert "Activar bot" in global_response.text
+
+
+def test_one_row_per_contact_keeps_the_most_recent_conversation():
+    from datetime import UTC, datetime
+
+    from agente.ports.channel import ConversationRow
+    from agente.web.panel import one_row_per_contact
+
+    def row(conv_id, phone, day, status="ended"):
+        return ConversationRow(
+            conversation_id=conv_id,
+            contact_name="Gabo",
+            contact_phone=phone,
+            last_message_text=f"m{day}",
+            last_activity_at=datetime(2026, 8, day, 12, tzinfo=UTC),
+            status=status,
+        )
+
+    rows, counts = one_row_per_contact(
+        [
+            row("c1", "+525619878083", 10),
+            row("c3", "+525512345678", 12),
+            row("c2", "+525619878083", 17, status="active"),
+        ]
+    )
+    assert [r.conversation_id for r in rows] == ["c2", "c3"]  # newest contact first
+    assert counts["+525619878083"] == 2
+    assert counts["+525512345678"] == 1
+
+
+def test_conversations_without_a_phone_are_not_merged_together():
+    from agente.ports.channel import ConversationRow
+    from agente.web.panel import one_row_per_contact
+
+    anonymous = [
+        ConversationRow("c1", None, None, None, None, "ended"),
+        ConversationRow("c2", None, None, None, None, "ended"),
+    ]
+    rows, counts = one_row_per_contact(anonymous)
+    assert len(rows) == 2
+    assert counts == {"c1": 1, "c2": 1}

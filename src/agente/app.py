@@ -18,20 +18,24 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI
 
 from .adapters.anthropic.client import AnthropicClient
+from .adapters.calendly.client import CalendlyClient
 from .adapters.kapso.client import KapsoClient
 from .adapters.store import db as store_db
+from .adapters.store.appointments import SqliteAppointmentsRepository
 from .adapters.store.contacts import SqliteContactsRepository
 from .adapters.store.messages import SqliteMessagesRepository
 from .adapters.store.mutes import SqliteMutesRepository
+from .adapters.store.summaries import SqliteSummariesRepository
 from .adapters.store.traces import SqliteTracesRepository
 from .config import Settings, load_settings
+from .domain.contacts import ContactKey
 from .domain.errors import StoreError
 from .logging_setup import setup_logging
 from .services.agent import Agent, AgentResponder
+from .services.compaction import compact, make_summarizer
 from .services.inbound import InboundService
 from .services.knowledge import Knowledge
-from .tools.buscar_wiki import buscar_wiki
-from .tools.escalar_a_humano import escalar_a_humano
+from .tools.registry import build_tools
 from .web.health import router as health_router
 from .web.panel import mount_static
 from .web.panel import router as panel_router
@@ -41,6 +45,10 @@ if TYPE_CHECKING:
     import sqlite3
 
 log = logging.getLogger(__name__)
+
+# The rolling summary is capped at ~120 words by its own prompt; this only
+# stops a runaway generation from costing a full conversation's budget.
+_SUMMARY_MAX_TOKENS = 512
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -52,26 +60,54 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.settings = cfg
         app.state.db = _open_database(cfg)
         app.state.channel = KapsoClient(cfg.kapso_base_url, cfg.kapso_api_key)
+        app.state.calendar = CalendlyClient(cfg.calendly_token, cfg.calendly_event_type_uri)
         content_root = cfg.content_dir.resolve()
+        app.state.knowledge = Knowledge.load(content_root / "playbook.md", content_root / "wiki.md")
+        traces = SqliteTracesRepository(app.state.db)
+        messages = SqliteMessagesRepository(app.state.db)
+        summaries = SqliteSummariesRepository(app.state.db)
         model = AnthropicClient(
             cfg.anthropic_api_key,
             cfg.anthropic_model_conversation,
             cfg.anthropic_max_tokens,
-            SqliteTracesRepository(app.state.db),
+            traces,
+        )
+        summarizer = make_summarizer(
+            AnthropicClient(
+                cfg.anthropic_api_key,
+                cfg.anthropic_model_summarization,
+                _SUMMARY_MAX_TOKENS,
+                traces,
+            )
         )
         responder = AgentResponder(
             Agent(model, {}, max_iterations=cfg.anthropic_max_iterations),
-            Knowledge.load(content_root / "playbook.md", content_root / "wiki.md"),
+            app.state.knowledge,
             SqliteContactsRepository(app.state.db),
             lambda key: _agent_tools(app, key),
+            messages=messages,
+            summaries=summaries,
         )
+
+        async def compactor(key: ContactKey) -> bool:
+            return await compact(
+                key,
+                messages,
+                summaries,
+                summarizer,
+                datetime.now(UTC),
+                budget=cfg.window_token_budget,
+                overlap_turns=cfg.overlap_turns,
+            )
+
         app.state.inbound = InboundService(
-            SqliteMessagesRepository(app.state.db),
+            messages,
             SqliteMutesRepository(app.state.db),
             app.state.channel,
             responder=responder,
             crisis_message=cfg.crisis_message,
             debounce_seconds=cfg.debounce_seconds,
+            compactor=compactor,
         )
         try:
             yield
@@ -79,6 +115,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if app.state.db is not None:
                 app.state.db.close()
             await app.state.channel.aclose()
+            await app.state.calendar.aclose()
 
     app = FastAPI(title="agente", lifespan=lifespan)
     app.include_router(health_router)
@@ -113,31 +150,13 @@ def _open_database(cfg: Settings) -> sqlite3.Connection | None:
 app = create_app()
 
 
-def _agent_tools(app: FastAPI, key):
-    content_root = app.state.settings.content_dir.resolve()
-    knowledge = Knowledge.load(content_root / "playbook.md", content_root / "wiki.md")
-    return [
-        {
-            "name": "buscar_wiki",
-            "description": "Busca datos confirmados de clínica.",
-            "input_schema": {
-                "type": "object",
-                "properties": {"consulta": {"type": "string"}},
-                "required": ["consulta"],
-            },
-        },
-        {
-            "name": "escalar_a_humano",
-            "description": "Pide seguimiento humano cuando sea necesario.",
-            "input_schema": {
-                "type": "object",
-                "properties": {"motivo": {"type": "string"}},
-                "required": ["motivo"],
-            },
-        },
-    ], {
-        "buscar_wiki": lambda data: buscar_wiki(knowledge, data["consulta"]),
-        "escalar_a_humano": lambda data: escalar_a_humano(
-            SqliteMutesRepository(app.state.db), key, data["motivo"], datetime.now(UTC)
-        ),
-    }
+def _agent_tools(app: FastAPI, key: ContactKey):
+    """The tool surface for one contact's turn (SPEC §6)."""
+    return build_tools(
+        knowledge=app.state.knowledge,
+        mutes=SqliteMutesRepository(app.state.db),
+        calendar=app.state.calendar,
+        appointments=SqliteAppointmentsRepository(app.state.db),
+        key=key,
+        timezone=app.state.settings.calendly_timezone,
+    )

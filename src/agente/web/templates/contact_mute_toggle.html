@@ -1,5 +1,9 @@
+{% from "macros.html" import hint %}
 <div class="form-action">
-  <label><strong>Bot para contacto</strong>{% if mute_state and mute_state.muted_until %} — hasta {{ mute_state.muted_until.strftime("%Y-%m-%d %H:%M") }}{% endif %}</label>
+  <label><strong>Bot para contacto</strong>{% if mute_state and mute_state.muted_until %} — hasta {{ mute_state.muted_until.strftime("%Y-%m-%d %H:%M") }}{% endif %}
+    {{ hint("Silencia al bot sólo para esta persona. No vuelve solo: sigue callado hasta que lo actives aquí, aunque el paciente escriba de nuevo mañana. El bot también se silencia solo cuando escala a una persona o detecta una situación de riesgo.") }}
+  </label>
+  {% if mute_state %}<p class="muted">Silenciado. Esta persona sólo habla con humanos.</p>{% endif %}
   <form hx-post="/admin/mute" hx-target="closest .form-action" hx-swap="outerHTML">
     <input type="hidden" name="phone_number_id" value="{{ key.phone_number_id }}">
     <input type="hidden" name="contact_phone" value="{{ key.contact_phone }}">

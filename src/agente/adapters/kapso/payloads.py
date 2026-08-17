@@ -88,9 +88,7 @@ def verify_webhook_signature(
     signature = _header_value(headers, _SIGNATURE_HEADER)
     if signature is None:
         return False
-    expected = hmac.new(
-        webhook_secret.encode("utf-8"), raw_body, hashlib.sha256
-    ).hexdigest()
+    expected = hmac.new(webhook_secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(signature, expected)
 
 

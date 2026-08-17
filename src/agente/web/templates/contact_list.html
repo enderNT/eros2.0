@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros.html" import hint %}
 {% block title %}Conversaciones — Panel{% endblock %}
 {% block body %}
 <header><h1>Conversaciones</h1></header>
@@ -7,10 +8,32 @@
 {% set phone_number_id = request.app.state.settings.kapso_phone_number_id %}
 {% set number_muted = number_muted %}
 <div id="number-switch">{% include "number_mute_toggle.html" %}</div>
-<table id="conv-list"><thead><tr><th>Contacto</th><th>Última actividad</th><th>Estado</th></tr></thead><tbody>
+<table id="conv-list">
+  <thead>
+    <tr>
+      <th>Contacto {{ hint("Una fila por persona. Kapso puede tener varias conversaciones del mismo número; aquí se muestran agrupadas, con la más reciente.") }}</th>
+      <th>Última actividad</th>
+      <th>Estado {{ hint("Estado de la conversación en Kapso, no del bot. Kapso cierra una conversación tras 24 h sin mensajes y abre otra con el siguiente mensaje: «cerrada» sólo significa que pasó ese tiempo. El bot responde igual.") }}</th>
+    </tr>
+  </thead>
+  <tbody>
 {% for row in conversations %}
-<tr><td><strong>{{ row.contact_name or "?" }}</strong><br><small>{{ mask_phone(row.contact_phone) }}</small></td><td><small>{{ row.last_activity_at.strftime("%Y-%m-%d %H:%M") if row.last_activity_at else "—" }}</small></td><td>{{ row.status or "—" }}</td></tr>
+{% set count = conversation_counts.get(row.contact_phone or row.conversation_id, 1) %}
+<tr>
+  <td>
+    <strong>{{ row.contact_name or "?" }}</strong><br>
+    <small>{{ mask_phone(row.contact_phone) }}</small>
+    {% if count > 1 %}<br><small class="subtle">{{ count }} conversaciones en Kapso</small>{% endif %}
+  </td>
+  <td><small>{{ row.last_activity_at.strftime("%Y-%m-%d %H:%M") if row.last_activity_at else "—" }}</small></td>
+  <td>
+    {% if row.status == "active" %}<span class="badge badge-active">abierta</span>
+    {% elif row.status == "ended" %}<span class="badge badge-ended">cerrada</span>
+    {% else %}{{ row.status or "—" }}{% endif %}
+  </td>
+</tr>
 {% if row.contact_phone %}<tr><td colspan="3"><div>{% set key = namespace(phone_number_id=request.app.state.settings.kapso_phone_number_id, contact_phone=row.contact_phone) %}{% set mute_state = mute_states[row.contact_phone] %}{% include "contact_mute_toggle.html" %}</div></td></tr>{% endif %}
 {% else %}<tr><td colspan="3">No hay conversaciones.</td></tr>{% endfor %}
-</tbody></table>
+  </tbody>
+</table>
 {% endblock %}

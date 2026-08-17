@@ -1,6 +1,10 @@
+{% from "macros.html" import hint %}
 <div class="form-action">
-  <label><strong>Interruptor global</strong></label>
+  <label><strong>Interruptor global</strong>
+    {{ hint("Apaga el bot por completo: ningún número, ningún contacto recibe respuesta. Es el «parar todo ahora»; los mensajes siguen llegando a la bandeja de Kapso para que los conteste una persona.") }}
+  </label>
   {% if global_muted %}
+  <p class="muted">El bot está apagado para todos.</p>
   <form hx-post="/admin/global" hx-target="closest .form-action" hx-swap="outerHTML">
     <input type="hidden" name="muted" value="false">
     <button type="submit">Activar bot (interruptor global)</button>

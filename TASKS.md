@@ -250,9 +250,16 @@ than a crash, and the system blocks are assembled in the specified order with br
 
 Acceptance: `pytest -q` green; no `anthropic` import outside `adapters/anthropic/`.
 
-## [ ] T9 — Calendly adapter and the scheduling tools
+## [~] T9 — Calendly adapter and the scheduling tools
 
 Needs T3, T8. §6. **The highest-risk area — v2's real bugs lived here.**
+
+**Partly done (2026-08-17).** `adapters/calendly/client.py`, `tools/ver_horarios.py`,
+`tools/agendar_cita.py` exist and are now registered in the agent's tool surface through
+`tools/registry.py`: the model lists slots, gets an ISO identifier per slot, and can only
+book an identifier that live availability still returns. **Still open:**
+`POST /webhook/calendly` (token + HMAC, status update on cancel/reschedule), writing the
+appointment into the durable profile (`next_appointment_utc`), and the DST-boundary test.
 
 - `adapters/calendly/client.py`: availability for the configured event type, invitee
   creation with the location kind the event type requires, HMAC signature verification in
@@ -272,7 +279,7 @@ signature rejected.
 
 Acceptance: `pytest -q` green; no real Calendly call in any test.
 
-## [ ] T10 — Remaining tools: wiki lookup and escalation
+## [x] T10 — Remaining tools: wiki lookup and escalation
 
 Needs T7, T8. §6.
 
@@ -286,6 +293,41 @@ Tests: escalation actually mutes and audits; the wiki tool returns the no-match 
 rather than an empty string.
 
 Acceptance: `pytest -q` green.
+
+## [ ] T9b — Calendly webhook: the appointment becomes real
+
+Needs T9 (done: availability + slot link). §6. **Decided 2026-08-17 with the owner:**
+Calendly's public API cannot book on a patient's behalf, so `agendar_cita` only hands over
+the slot-specific `scheduling_url` and says explicitly that nothing is confirmed. The
+appointment exists only once Calendly tells us so. This task closes that loop.
+
+- **Attribution without PII in the URL.** `agendar_cita` appends
+  `?utm_content=<token>` to the booking link, where `<token>` is an opaque random id
+  (`secrets.token_urlsafe(16)`), never the phone number. New table via migration
+  `0002_booking_token.sql`: `booking_token(token PRIMARY KEY, phone_number_id,
+  contact_phone, slot_utc, created_at)`. New repository
+  `adapters/store/booking_tokens.py` behind a protocol in `ports/store.py`.
+- **`POST /webhook/calendly`** in `web/webhooks.py`: header
+  `Calendly-Webhook-Signature: t=<unix>,v1=<hex>`; the signed payload is
+  `f"{t}.{raw_body}"`, **not** the raw body — `adapters/calendly/signature.py` currently
+  signs the raw body only and must be corrected. Reject a timestamp older than 5 minutes.
+  Forged or stale → 401, nothing written.
+- **`invitee.created`** → read `payload.tracking.utm_content`, resolve the contact through
+  `booking_token`, write the appointment (`status='scheduled'`, `calendly_event_id` =
+  `payload.event` URI), update the durable profile (`next_appointment_utc`,
+  `appointment_count`), and send one WhatsApp confirmation with date, time and the clinic
+  address. No token match → log and 200 (a human booked directly; not our conversation).
+- **`invitee.canceled`** → `update_status(event_uri, 'canceled')`, clear
+  `next_appointment_utc`, and notify the contact if we know them.
+- **Idempotency.** Calendly retries: the same `calendly_event_id` must never produce two
+  appointment rows or two WhatsApp messages.
+
+Tests (no network): valid signature accepted and stale/forged rejected; `invitee.created`
+writing exactly one appointment and one outbound message; the same delivery twice being a
+no-op; `invitee.canceled` flipping the status; an unknown `utm_content` logged and ignored.
+
+Acceptance: `pytest -q` green. Registering the webhook in Calendly is an **operator**
+action — never run it from an agent task.
 
 ## [ ] T11 — Crisis gate
 
@@ -303,9 +345,11 @@ agent calls, and the crisis message sent verbatim with no model paraphrase.
 
 Acceptance: `pytest -q` green; a configured placeholder crisis message fails at boot.
 
-## [ ] T12 — Compaction
+## [x] T12 — Compaction
 
-Needs T3, T8. §9.
+Needs T3, T8. §9. **Done 2026-08-17** — `services/compaction.py` is watermark-aware and
+Haiku-backed, `AgentResponder` builds the turn from the stored window plus the summary,
+and `InboundService` runs it after the reply is sent. Failure is logged, never fatal.
 
 - `services/compaction.py`: triggered by token budget, runs off the reply path, summarizes
   in Haiku with a prompt that forbids inventing and forbids restating profile facts,

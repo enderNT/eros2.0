@@ -21,8 +21,8 @@ from typing import Any
 
 import httpx
 
-from ...domain.contacts import mask_phone
-from ...domain.errors import KapsoError
+from ...domain.contacts import mask_phone, normalize_phone
+from ...domain.errors import InvalidPhoneError, KapsoError
 from ...ports.channel import ConversationList, ConversationRow
 
 logger = logging.getLogger("agente.kapso")
@@ -92,10 +92,10 @@ class KapsoClient:
     async def list_conversations(
         self, phone_number_id: str, *, cursor: str | None = None, limit: int = 20
     ) -> ConversationList:
-        url = f"{self._base_url}/whatsapp/phone-numbers/{phone_number_id}/conversations"
+        url = f"{self._base_url}/{phone_number_id}/conversations"
         params: dict[str, str | int] = {"limit": limit}
         if cursor is not None:
-            params["cursor"] = cursor
+            params["after"] = cursor
         started = time.monotonic()
         try:
             response = await self._client.get(url, params=params, headers=self._headers)
@@ -114,7 +114,7 @@ class KapsoClient:
         latency_ms = int((time.monotonic() - started) * 1000)
         data = response.json()
         rows = [_conversation_row(item) for item in data.get("data", [])]
-        next_cursor = data.get("cursor")
+        next_cursor = (data.get("paging") or {}).get("next")
         logger.info(
             "kapso.list_conversations ok",
             extra={
@@ -128,16 +128,34 @@ class KapsoClient:
 
 
 def _conversation_row(item: dict[str, Any]) -> ConversationRow:
-    contact = item.get("contact") or {}
-    last_message = item.get("last_message") or {}
+    """Map one row of `GET /{phone_number_id}/conversations`.
+
+    Shape confirmed against the live API (2026-08-17): the contact phone
+    arrives bare (`525619878083`) and is normalized to E.164 here, because
+    the mute switch is keyed by it and the inbound path stores it that way.
+    Everything about the last message sits under `kapso`.
+    """
+    kapso = item.get("kapso") or {}
+    if not isinstance(kapso, dict):
+        kapso = {}
     return ConversationRow(
         conversation_id=str(item.get("id", "")),
-        contact_name=contact.get("name") if isinstance(contact, dict) else None,
-        contact_phone=contact.get("phone") if isinstance(contact, dict) else None,
-        last_message_text=last_message.get("text") if isinstance(last_message, dict) else None,
-        last_activity_at=_parse_datetime(item.get("last_activity_at")),
+        contact_name=item.get("contact_name") or kapso.get("contact_name"),
+        contact_phone=_normalized(item.get("phone_number")),
+        last_message_text=kapso.get("last_message_text"),
+        last_activity_at=_parse_datetime(item.get("last_active_at"))
+        or _parse_datetime(kapso.get("last_message_timestamp")),
         status=item.get("status"),
     )
+
+
+def _normalized(value: object) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return normalize_phone(value)
+    except InvalidPhoneError:
+        return None
 
 
 def _parse_datetime(value: object) -> datetime | None:

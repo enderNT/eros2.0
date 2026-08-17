@@ -7,7 +7,7 @@ from agente.adapters.store.messages import SqliteMessagesRepository
 from agente.adapters.store.mutes import SqliteMutesRepository
 from agente.domain.contacts import ContactKey
 from agente.domain.crisis import CrisisVerdict
-from agente.domain.errors import KapsoError
+from agente.domain.errors import KapsoError, StoreError
 from agente.services.inbound import FALLBACK, InboundService
 
 
@@ -107,3 +107,41 @@ async def test_acute_crisis_mutes_and_skips_responder(db_conn):
     )
     await service.handle(_payload("acute"))
     assert channel.sent[-1][1] == "mensaje crisis"
+
+
+@pytest.mark.asyncio
+async def test_compaction_runs_after_the_reply_is_sent(db_conn):
+    order = []
+    channel = FakeChannel()
+
+    async def compactor(_key):
+        order.append(len(channel.sent))
+        return True
+
+    service = InboundService(
+        SqliteMessagesRepository(db_conn),
+        SqliteMutesRepository(db_conn),
+        channel,
+        compactor=compactor,
+        debounce_seconds=0,
+    )
+    await service.handle(_payload("m-compact"))
+    assert order == [1]  # the reply was already out when compaction started
+
+
+@pytest.mark.asyncio
+async def test_compaction_failure_does_not_break_the_turn(db_conn):
+    channel = FakeChannel()
+
+    async def compactor(_key):
+        raise StoreError("db down")
+
+    service = InboundService(
+        SqliteMessagesRepository(db_conn),
+        SqliteMutesRepository(db_conn),
+        channel,
+        compactor=compactor,
+        debounce_seconds=0,
+    )
+    await service.handle(_payload("m-compact-fail"))
+    assert channel.sent

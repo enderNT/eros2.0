@@ -1,0 +1,6 @@
+{# Tap-friendly inline help: <details> works on a phone without JS, unlike a
+   hover tooltip. The panel's real moment of use is the psychologist on their
+   phone, so every hint must open with a thumb. #}
+{% macro hint(text) -%}
+<details class="hint"><summary title="Qué es esto" aria-label="Qué es esto">i</summary><p>{{ text }}</p></details>
+{%- endmacro %}

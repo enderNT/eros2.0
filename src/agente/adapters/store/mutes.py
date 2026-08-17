@@ -31,8 +31,7 @@ class SqliteMutesRepository:
                 now,
             )
             or self._level_active(
-                "SELECT muted_until FROM mute"
-                " WHERE phone_number_id = ? AND contact_phone = ?",
+                "SELECT muted_until FROM mute WHERE phone_number_id = ? AND contact_phone = ?",
                 (key.phone_number_id, key.contact_phone),
                 now,
             )

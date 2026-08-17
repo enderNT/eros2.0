@@ -10,7 +10,7 @@
       {% for row in traces %}
       <tr><td>{{ row.model }}</td><td>{{ row.tokens_in }}/{{ row.tokens_out }} ms {{ row.latency_ms }}</td><td><small>{{ row.created_at.strftime("%Y-%m-%d %H:%M") }}</small></td></tr>
       {% else %}
-      <tr><td colspan="3">No hay trazas (T8 pendiente).</td></tr>
+      <tr><td colspan="3">Todavía no hay turnos registrados.</td></tr>
       {% endfor %}
     </tbody>
   </table>

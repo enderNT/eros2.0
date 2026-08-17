@@ -6,7 +6,7 @@ from agente.adapters.store.appointments import SqliteAppointmentsRepository
 from agente.adapters.store.contacts import SqliteContactsRepository
 from agente.domain.contacts import ContactKey
 from agente.ports.calendar import CalendarSlot
-from agente.tools.agendar_cita import agendar_cita
+from agente.tools.agendar_cita import ALREADY_BOOKED, NO_LINK, agendar_cita
 from agente.tools.ver_horarios import ver_horarios
 
 
@@ -28,18 +28,40 @@ async def test_lists_local_bookable_slot():
 
 
 @pytest.mark.asyncio
-async def test_booking_writes_appointment(db_conn):
+async def test_booking_returns_the_link_without_claiming_a_confirmed_appointment(db_conn):
+    now = datetime(2026, 8, 16, 12, tzinfo=UTC)
+    slot = CalendarSlot(
+        "a",
+        now + timedelta(hours=2),
+        now + timedelta(hours=3),
+        booking_url="https://calendly.com/x/new-meeting/2026-08-16T14:00:00Z",
+    )
+    key = ContactKey("1087343774471931", "+12052943796")
+    SqliteContactsRepository(db_conn).ensure_contact(key, now)
+    appointments = SqliteAppointmentsRepository(db_conn)
+    result = await agendar_cita(appointments, key, slot, now)
+    assert slot.booking_url in result
+    assert "NO está agendada" in result
+    assert appointments.for_contact(key) == []
+
+
+@pytest.mark.asyncio
+async def test_slot_without_a_link_is_refused(db_conn):
     now = datetime(2026, 8, 16, 12, tzinfo=UTC)
     slot = CalendarSlot("a", now + timedelta(hours=2), now + timedelta(hours=3))
     key = ContactKey("1087343774471931", "+12052943796")
     SqliteContactsRepository(db_conn).ensure_contact(key, now)
-    result = await agendar_cita(
-        FakeCalendar(),
-        SqliteAppointmentsRepository(db_conn),
-        key,
-        slot,
-        "Ana",
-        "ana@example.com",
-        now,
+    assert await agendar_cita(SqliteAppointmentsRepository(db_conn), key, slot, now) == NO_LINK
+
+
+@pytest.mark.asyncio
+async def test_a_confirmed_appointment_is_not_offered_again(db_conn):
+    now = datetime(2026, 8, 16, 12, tzinfo=UTC)
+    slot = CalendarSlot(
+        "a", now + timedelta(hours=2), now + timedelta(hours=3), booking_url="https://x/y"
     )
-    assert "registrada" in result
+    key = ContactKey("1087343774471931", "+12052943796")
+    SqliteContactsRepository(db_conn).ensure_contact(key, now)
+    appointments = SqliteAppointmentsRepository(db_conn)
+    appointments.add(key, "event-1", slot.start_utc, now)
+    assert await agendar_cita(appointments, key, slot, now) == ALREADY_BOOKED

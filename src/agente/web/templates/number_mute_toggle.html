@@ -1,6 +1,10 @@
+{% from "macros.html" import hint %}
 <div class="form-action">
-  <label><strong>Número</strong>: {{ phone_number_id | truncate(8) }}</label>
+  <label><strong>Número</strong>: {{ phone_number_id | truncate(8) }}
+    {{ hint("Apaga el bot para TODOS los contactos de este número de WhatsApp — no sólo para una persona. Útil si hay que frenar el número entero mientras se revisa algo.") }}
+  </label>
   {% if number_muted %}
+  <p class="muted">El bot no responde a nadie en este número.</p>
   <form hx-post="/admin/number-mute" hx-target="closest .form-action" hx-swap="outerHTML">
     <input type="hidden" name="phone_number_id" value="{{ phone_number_id }}">
     <input type="hidden" name="muted" value="false">

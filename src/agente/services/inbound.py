@@ -12,7 +12,7 @@ from ..adapters.store.messages import SqliteMessagesRepository
 from ..adapters.store.mutes import SqliteMutesRepository
 from ..domain.contacts import ContactKey
 from ..domain.crisis import CrisisVerdict
-from ..domain.errors import KapsoError
+from ..domain.errors import DomainError, KapsoError
 from ..domain.reply import split_reply
 from ..ports.channel import Channel
 from .crisis import Classifier, check
@@ -33,11 +33,13 @@ class InboundService:
         crisis_classifier: Classifier | None = None,
         crisis_message: str = "",
         debounce_seconds: float = 4.0,
+        compactor: Callable[[ContactKey], Awaitable[bool]] | None = None,
     ) -> None:
         self._messages, self._mutes, self._channel, self._reply = messages, mutes, channel, reply
         self._responder = responder
         self._crisis_classifier, self._crisis_message = crisis_classifier, crisis_message
         self._debounce_seconds = debounce_seconds
+        self._compactor = compactor
         self._pending: dict[ContactKey, list[WebhookPayload]] = {}
         self._pending_lock = asyncio.Lock()
 
@@ -102,6 +104,16 @@ class InboundService:
         log.info(
             "inbound_turn", extra={"message_id": message.id, "muted": False, "outcome": "sent"}
         )
+        await self._compact(key)
+
+    async def _compact(self, key: ContactKey) -> None:
+        """Off the reply path: the patient already has the answer."""
+        if self._compactor is None:
+            return
+        try:
+            await self._compactor(key)
+        except DomainError:
+            log.error("compaction_failed", extra={"stage": "inbound"})
 
 
 def _timestamp(value: str) -> datetime:

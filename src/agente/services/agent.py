@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from typing import Any
 
 from ..domain.contacts import ContactKey
 from ..ports.model import Model
-from ..ports.store import ContactsRepository, Profile, SummaryRow
+from ..ports.store import (
+    ContactsRepository,
+    MessageRow,
+    MessagesRepository,
+    Profile,
+    SummariesRepository,
+    SummaryRow,
+)
 from .knowledge import Knowledge
 
 log = logging.getLogger(__name__)
@@ -55,10 +62,24 @@ class Agent:
 
 
 class AgentResponder:
-    """Adapts a contact/text inbound turn to the model-facing agent."""
+    """Adapts a contact/text inbound turn to the model-facing agent.
+
+    The verbatim window and the rolling summary come from the store, so the
+    turn the model sees is the whole conversation minus what compaction
+    already folded away (SPEC §9). Without `messages` it degrades to the
+    single current turn.
+    """
 
     def __init__(
-        self, agent: Agent, knowledge: Knowledge, contacts: ContactsRepository, tools_for_contact
+        self,
+        agent: Agent,
+        knowledge: Knowledge,
+        contacts: ContactsRepository,
+        tools_for_contact,
+        *,
+        messages: MessagesRepository | None = None,
+        summaries: SummariesRepository | None = None,
+        window_limit: int = 40,
     ) -> None:
         self._agent, self._knowledge, self._contacts, self._tools_for_contact = (
             agent,
@@ -66,19 +87,50 @@ class AgentResponder:
             contacts,
             tools_for_contact,
         )
+        self._messages, self._summaries, self._window_limit = messages, summaries, window_limit
 
     async def __call__(self, key: ContactKey, text: str) -> str:
         definitions, handlers = self._tools_for_contact(key)
+        summary = self._summaries.get(key) if self._summaries is not None else None
         previous_tools = self._agent._tools
         self._agent._tools = handlers
         try:
             return await self._agent.reply(
-                system_blocks(self._knowledge, self._contacts.get_profile(key), None),
-                [{"role": "user", "content": text}],
+                system_blocks(self._knowledge, self._contacts.get_profile(key), summary),
+                self._history(key, summary, text),
                 definitions,
             )
         finally:
             self._agent._tools = previous_tools
+
+    def _history(
+        self, key: ContactKey, summary: SummaryRow | None, text: str
+    ) -> list[dict[str, Any]]:
+        if self._messages is None:
+            return [{"role": "user", "content": text}]
+        rows = self._messages.window(key, self._window_limit)
+        if summary is not None:
+            rows = [row for row in rows if row.id > summary.watermark_message_id]
+        turns = merge_turns(rows)
+        # The inbound message is stored before the reply is built, so the last
+        # user turn already carries it; only a missing or stale tail is added.
+        if not turns or turns[-1]["role"] != "user":
+            turns.append({"role": "user", "content": text})
+        return turns
+
+
+def merge_turns(rows: Iterable[MessageRow]) -> list[dict[str, Any]]:
+    """Store rows to Anthropic messages: roles must alternate and start with the patient."""
+    turns: list[dict[str, Any]] = []
+    for row in rows:
+        role = "user" if row.direction == "inbound" else "assistant"
+        if not turns and role == "assistant":
+            continue
+        if turns and turns[-1]["role"] == role:
+            turns[-1]["content"] = f"{turns[-1]['content']}\n{row.text}"
+            continue
+        turns.append({"role": role, "content": row.text})
+    return turns
 
 
 def system_blocks(
