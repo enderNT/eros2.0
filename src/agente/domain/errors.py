@@ -25,3 +25,7 @@ class KapsoError(DomainError):
 
 class ModelError(DomainError):
     """Language model adapter failed."""
+
+
+class CalendlyError(DomainError):
+    """Calendly adapter failed."""
