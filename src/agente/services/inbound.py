@@ -37,6 +37,8 @@ class InboundService:
         crisis_directives: str = "",
         debounce_seconds: float = 4.0,
         compactor: Callable[[ContactKey], Awaitable[bool]] | None = None,
+        on_inbound: Callable[[ContactKey], None] | None = None,
+        on_outbound: Callable[[ContactKey, str, datetime], None] | None = None,
     ) -> None:
         self._messages, self._mutes, self._channel, self._reply = messages, mutes, channel, reply
         self._responder = responder
@@ -44,6 +46,7 @@ class InboundService:
         self._crisis_directives = crisis_directives
         self._debounce_seconds = debounce_seconds
         self._compactor = compactor
+        self._on_inbound, self._on_outbound = on_inbound, on_outbound
         self._pending: dict[ContactKey, list[WebhookPayload]] = {}
         self._pending_lock = asyncio.Lock()
 
@@ -54,6 +57,8 @@ class InboundService:
         text = _text(payload)
         if not self._messages.add_inbound(key, message.id, text, now):
             return
+        if self._on_inbound is not None:
+            self._on_inbound(key)
         async with self._pending_lock:
             waiting = self._pending.setdefault(key, [])
             waiting.append(payload)
@@ -104,7 +109,10 @@ class InboundService:
                 outbound_id = await self._channel.send_text(
                     payload.phone_number_id, key.contact_phone, chunk
                 )
-                self._messages.add_outbound(key, outbound_id, chunk, datetime.now(UTC))
+                sent_at = datetime.now(UTC)
+                self._messages.add_outbound(key, outbound_id, chunk, sent_at)
+                if self._on_outbound is not None:
+                    self._on_outbound(key, chunk, sent_at)
         except KapsoError:
             try:
                 outbound_id = await self._channel.send_text(

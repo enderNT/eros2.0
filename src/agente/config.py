@@ -65,6 +65,8 @@ class Settings(BaseSettings):
     reply_max_chunks: int = 3
     reply_chunk_chars: int = 600
     reply_chunk_delay_seconds: float = 1.0
+    booking_followup_minutes: int = 90
+    booking_followup_poll_seconds: float = 15.0
     crisis_message: str
 
     # Logging

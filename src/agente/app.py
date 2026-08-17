@@ -9,10 +9,11 @@ degraded instead of dying silently.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from contextlib import asynccontextmanager, suppress
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
@@ -26,6 +27,7 @@ from .adapters.store.booking_tokens import SqliteBookingTokensRepository
 from .adapters.store.contacts import SqliteContactsRepository
 from .adapters.store.messages import SqliteMessagesRepository
 from .adapters.store.mutes import SqliteMutesRepository
+from .adapters.store.outbox import SqliteOutboxRepository
 from .adapters.store.summaries import SqliteSummariesRepository
 from .adapters.store.traces import SqliteTracesRepository
 from .config import Settings, load_settings
@@ -36,6 +38,7 @@ from .services.agent import Agent, AgentResponder
 from .services.booking import BookingService
 from .services.compaction import compact, make_summarizer
 from .services.crisis import make_classifier
+from .services.followup import BookingFollowups
 from .services.inbound import InboundService
 from .services.knowledge import Knowledge
 from .tools.registry import build_tools
@@ -78,6 +81,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         contacts = SqliteContactsRepository(app.state.db)
         appointments = SqliteAppointmentsRepository(app.state.db)
         app.state.booking_tokens = SqliteBookingTokensRepository(app.state.db)
+        outbox = SqliteOutboxRepository(app.state.db)
         model = AnthropicClient(
             cfg.anthropic_api_key,
             cfg.anthropic_model_conversation,
@@ -110,6 +114,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             appointments=appointments,
             contacts=contacts,
             messages=messages,
+            outbox=outbox,
             channel=app.state.channel,
             timezone=cfg.calendly_timezone,
             address=cfg.calendly_location_value,
@@ -126,6 +131,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 overlap_turns=cfg.overlap_turns,
             )
 
+        followups = BookingFollowups(
+            outbox=outbox,
+            booking_tokens=app.state.booking_tokens,
+            appointments=appointments,
+            messages=messages,
+            mutes=SqliteMutesRepository(app.state.db),
+            channel=app.state.channel,
+            timezone=cfg.calendly_timezone,
+            delay=timedelta(minutes=cfg.booking_followup_minutes),
+        )
+        app.state.booking_followups = followups
         app.state.inbound = InboundService(
             messages,
             SqliteMutesRepository(app.state.db),
@@ -136,10 +152,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             crisis_directives=app.state.knowledge.crisis_directives(),
             debounce_seconds=cfg.debounce_seconds,
             compactor=compactor,
+            on_inbound=followups.cancel_for_contact,
+            on_outbound=followups.schedule_from_outbound,
+        )
+        followup_task = (
+            asyncio.create_task(_run_followups(followups, cfg.booking_followup_poll_seconds))
+            if app.state.db is not None
+            else None
         )
         try:
             yield
         finally:
+            if followup_task is not None:
+                followup_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await followup_task
             if app.state.db is not None:
                 app.state.db.close()
             await app.state.channel.aclose()
@@ -151,6 +178,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(webhooks_router)
     mount_static(app)
     return app
+
+
+async def _run_followups(followups: BookingFollowups, poll_seconds: float) -> None:
+    while True:
+        try:
+            await followups.send_due()
+        except StoreError:
+            log.error("booking_followup_poll_failed")
+        await asyncio.sleep(poll_seconds)
 
 
 def _prepare_database_dir(cfg: Settings) -> None:

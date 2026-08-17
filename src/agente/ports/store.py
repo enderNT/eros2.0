@@ -98,6 +98,18 @@ class BookingTokenRow:
 
 
 @dataclass(frozen=True, slots=True)
+class OutboxRow:
+    """One pending outbound follow-up, consumed before it is sent."""
+
+    id: int
+    key: ContactKey
+    text: str
+    due_at: datetime
+    booking_token: str | None
+    slot_utc: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
 class LlmTraceRow:
     turn_id: str | None
     model: str
@@ -217,6 +229,25 @@ class BookingTokensRepository(Protocol):
     def issue(self, token: str, key: ContactKey, slot_utc: datetime, now: datetime) -> None: ...
 
     def resolve(self, token: str) -> BookingTokenRow | None: ...
+
+
+class OutboxRepository(Protocol):
+    def schedule_booking_followup(
+        self,
+        key: ContactKey,
+        booking_token: str,
+        slot_utc: datetime,
+        text: str,
+        due_at: datetime,
+    ) -> None: ...
+
+    def due(self, now: datetime, limit: int = 20) -> list[OutboxRow]: ...
+
+    def consume(self, row_id: int, now: datetime) -> bool: ...
+
+    def cancel_for_contact(self, key: ContactKey) -> None: ...
+
+    def cancel_for_token(self, booking_token: str) -> None: ...
 
 
 class PurgeRepository(Protocol):

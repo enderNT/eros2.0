@@ -34,6 +34,7 @@ from ..ports.store import (
     BookingTokensRepository,
     ContactsRepository,
     MessagesRepository,
+    OutboxRepository,
     Profile,
 )
 
@@ -76,13 +77,15 @@ class BookingService:
         appointments: AppointmentsRepository,
         contacts: ContactsRepository,
         messages: MessagesRepository,
+        outbox: OutboxRepository,
         channel: Channel,
         timezone: str,
         address: str = "",
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._tokens, self._appointments = tokens, appointments
-        self._contacts, self._messages, self._channel = contacts, messages, channel
+        self._contacts, self._messages = contacts, messages
+        self._outbox, self._channel = outbox, channel
         self._timezone, self._address, self._now = timezone, address, now
 
     async def handle(self, event: str, payload: dict[str, Any]) -> None:
@@ -108,6 +111,7 @@ class BookingService:
             # guessing whose it is would confirm an appointment to the wrong person.
             log.info("calendly_booking_unlinked", extra={"has_token": bool(token)})
             return
+        self._outbox.cancel_for_token(token)
         now = self._now()
         slot = _start_time(payload) or record.slot_utc
         self._contacts.ensure_contact(record.key, now)

@@ -6,6 +6,7 @@ import pytest
 
 from agente.adapters.store.appointments import SqliteAppointmentsRepository
 from agente.adapters.store.booking_tokens import SqliteBookingTokensRepository
+from agente.adapters.store.outbox import SqliteOutboxRepository
 from agente.domain.contacts import ContactKey
 from agente.domain.errors import KapsoError
 from agente.services.booking import BookingService, confirmation_text
@@ -38,6 +39,7 @@ def booking(db_conn, contacts, messages):
             appointments=SqliteAppointmentsRepository(db_conn),
             contacts=contacts,
             messages=messages,
+            outbox=SqliteOutboxRepository(db_conn),
             channel=channel or FakeChannel(),
             timezone="America/Mexico_City",
             address=address,
