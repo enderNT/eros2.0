@@ -12,10 +12,22 @@ Keep it short. It is a status, not a history: overwrite stale lines instead of a
 
 ## Phase
 
-**T1–T8, T10 and T12 complete; T9 partly done (T9b specced); T11 and T13 next.** Branch `v3-rebuild`.
-The full inbound path runs end to end: webhook → dedupe → debounce → mute gate → agent
-with four tools → chunked send → compaction. Everything on `main` remains
+**T1–T13 complete. The backlog has no open task.** Branch `v3-rebuild`. The full inbound
+path runs end to end: webhook → dedupe → debounce → mute gate → crisis pre-gate → agent
+with four tools → chunked send → compaction, plus the Calendly return path
+(`invitee.created` → appointment + profile + confirmation). Everything on `main` remains
 reference-only.
+
+**The operator sequence is in `RUNBOOK.md`, and the order matters:** deploy first (both
+webhooks are inbound deliveries and there is no public URL yet) → register Calendly →
+clinic content → full E2E → repoint Kapso last. The clinic's open questions are in
+`content/PREGUNTAS-CLINICA.md`, one per `<<pendiente>>` marker.
+
+**What stands between this and production is content and operator steps, not code:** the
+clinic's real crisis message, the pending wiki sections, a real clinic event type in
+Calendly, registering the Calendly webhook subscription (`CALENDLY_SIGNING_KEY` empty means
+the route rejects every delivery, by design), and repointing the Kapso webhook. All of them
+are human actions. `E2E-CHECKLIST.md` is the gate.
 
 ## What exists right now
 
@@ -78,7 +90,29 @@ reference-only.
 - **v3 code (T5):** `web/auth.py` signed, expiring panel session; `web/panel.py` and
   Jinja2/locally served HTMX templates provide the mobile-first admin panel. Conversations
   are read live from injected Kapso channel; contact, number and global mute actions audit
-  locally; traces remain empty until T8. Tests: 135 total green.
+  locally; the trace list reads `llm_trace`. Rows are grouped one per contact and every
+  switch carries an inline `i` hint.
+- **v3 code (T9b, 2026-08-17):** the booking loop closes. `agendar_cita` mints an opaque
+  `utm_content` token (never the phone number — the URL leaves our control), stored by
+  `adapters/store/booking_tokens.py` (migration `0002`). `adapters/calendly/signature.py`
+  verifies Calendly's real scheme: header `t=<unix>,v1=<hex>` over `f"{t}.{raw_body}"`,
+  5-minute tolerance, and no signing key configured means reject. `services/booking.py`
+  handles `invitee.created` / `invitee.canceled`: appointment row, durable profile
+  (`next_appointment_utc`, `appointment_count`, name/email from the invitee), one
+  confirmation in clinic local time. Idempotent per `calendly_event_id`; an unknown token
+  is logged and ignored, because a booking made straight from Calendly is not ours to
+  confirm. `POST /webhook/calendly` verifies inline and 401s forged or stale deliveries.
+- **v3 code (T11, 2026-08-17):** `services/crisis.py` is the pre-gate — one Haiku call, the
+  verdict returned through a tool schema with an `enum` so nothing is string-matched, and
+  every failure mode (unknown value, no tool call, model error, timeout) resolves to
+  `possible`. `acute` sends the clinic text verbatim, mutes the contact, writes an urgent
+  audit row and never reaches the agent; `possible` appends the playbook's crisis section as
+  a fourth system block for that turn (no cache breakpoint — it would invalidate the three
+  stable blocks on every other turn).
+- **v3 code (T13):** `Dockerfile` (non-root, single process) and `docker-compose.yml` with
+  the persistent `agente-data` volume; `README.md` covers the volume requirement, the
+  environment variables and the operator-only Kapso webhook registration. Verified by
+  running the container against the live APIs.
 
 ## Decided since the rewrite started
 
@@ -128,7 +162,11 @@ quality rubric. Read it before touching anything that talks to a patient.
   behaviour, not a bug to fix with an expiry.
 - The test event type is `Discovery call` (15 min) on a personal Calendly, with slots
   outside the clinic's 8:00–17:00. Fine for plumbing, useless for judging answer quality.
-- The crisis classifier is still `None` in the wiring (T11): the crisis path is reachable
-  but nothing ever classifies a message as acute yet.
+- The crisis pre-gate now runs on **every** inbound turn — one Haiku call per message,
+  before the agent. That is the intended cost; it is also why a Kapso/Anthropic outage
+  makes every turn `possible` rather than silently `none`.
+- `CALENDLY_SIGNING_KEY` is empty until an operator registers the webhook subscription.
+  While it is empty, `/webhook/calendly` 401s everything and no booking is ever confirmed —
+  correct, but it means a booking made during a test will look like it "did nothing".
 - `qwen` must be invoked bare (`qwen -p "..."`), no env-var prefix, or Claude Code's
   permission rule will not match.

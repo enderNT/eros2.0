@@ -20,6 +20,7 @@ EXPECTED_TABLES = {
     "global_state",
     "audit_log",
     "appointment",
+    "booking_token",
     "llm_trace",
     "outbox",
 }
@@ -54,7 +55,7 @@ def test_migrate_creates_every_table(db_conn):
 
 def test_migrate_records_the_applied_version(db_conn):
     rows = db_conn.execute("SELECT version FROM schema_version").fetchall()
-    assert [row["version"] for row in rows] == [1]
+    assert [row["version"] for row in rows] == [1, 2]
 
 
 def test_migrate_is_idempotent_and_preserves_data(db_conn):

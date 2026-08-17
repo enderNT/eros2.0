@@ -11,7 +11,7 @@ from ..adapters.kapso.payloads import WebhookPayload
 from ..adapters.store.messages import SqliteMessagesRepository
 from ..adapters.store.mutes import SqliteMutesRepository
 from ..domain.contacts import ContactKey
-from ..domain.crisis import CrisisVerdict
+from ..domain.crisis import CrisisVerdict, adds_crisis_directives
 from ..domain.errors import DomainError, KapsoError
 from ..domain.reply import split_reply
 from ..ports.channel import Channel
@@ -29,15 +29,17 @@ class InboundService:
         channel: Channel,
         *,
         reply: str = "Gracias por tu mensaje.",
-        responder: Callable[[ContactKey, str], Awaitable[str]] | None = None,
+        responder: Callable[[ContactKey, str, str | None], Awaitable[str]] | None = None,
         crisis_classifier: Classifier | None = None,
         crisis_message: str = "",
+        crisis_directives: str = "",
         debounce_seconds: float = 4.0,
         compactor: Callable[[ContactKey], Awaitable[bool]] | None = None,
     ) -> None:
         self._messages, self._mutes, self._channel, self._reply = messages, mutes, channel, reply
         self._responder = responder
         self._crisis_classifier, self._crisis_message = crisis_classifier, crisis_message
+        self._crisis_directives = crisis_directives
         self._debounce_seconds = debounce_seconds
         self._compactor = compactor
         self._pending: dict[ContactKey, list[WebhookPayload]] = {}
@@ -74,15 +76,24 @@ class InboundService:
             merged = "\n".join(_text(item) for item in batch)
             verdict = await check(self._crisis_classifier, merged)
             if verdict is CrisisVerdict.ACUTE:
-                self._mutes.set_mute(key, now, actor="crisis", reason="acute crisis")
+                # The clinic's text, verbatim: the model never gets a turn to
+                # paraphrase a crisis message.
+                self._mutes.set_mute(key, now, actor="crisis", reason="acute crisis", urgent=True)
                 outbound_id = await self._channel.send_text(
                     payload.phone_number_id, key.contact_phone, self._crisis_message
                 )
                 self._messages.add_outbound(
                     key, outbound_id, self._crisis_message, datetime.now(UTC)
                 )
+                log.warning(
+                    "inbound_turn",
+                    extra={"message_id": message.id, "muted": True, "outcome": "crisis"},
+                )
                 return
-            reply = await self._responder(key, merged) if self._responder else self._reply
+            directives = self._crisis_directives if adds_crisis_directives(verdict) else None
+            reply = (
+                await self._responder(key, merged, directives) if self._responder else self._reply
+            )
             for chunk in split_reply(reply):
                 outbound_id = await self._channel.send_text(
                     payload.phone_number_id, key.contact_phone, chunk

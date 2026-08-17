@@ -88,6 +88,16 @@ class AppointmentRow:
 
 
 @dataclass(frozen=True, slots=True)
+class BookingTokenRow:
+    """What a Calendly `utm_content` value resolves back to."""
+
+    token: str
+    key: ContactKey
+    slot_utc: datetime
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class LlmTraceRow:
     turn_id: str | None
     model: str
@@ -156,6 +166,7 @@ class MutesRepository(Protocol):
         actor: str,
         reason: str,
         until: datetime | None = None,
+        urgent: bool = False,
     ) -> None: ...
 
     def clear_mute(self, key: ContactKey, now: datetime, *, actor: str, reason: str) -> None: ...
@@ -197,7 +208,15 @@ class AppointmentsRepository(Protocol):
 
     def for_contact(self, key: ContactKey) -> list[AppointmentRow]: ...
 
+    def find(self, calendly_event_id: str) -> AppointmentRow | None: ...
+
     def update_status(self, calendly_event_id: str, status: str, now: datetime) -> bool: ...
+
+
+class BookingTokensRepository(Protocol):
+    def issue(self, token: str, key: ContactKey, slot_utc: datetime, now: datetime) -> None: ...
+
+    def resolve(self, token: str) -> BookingTokenRow | None: ...
 
 
 class TracesRepository(Protocol):

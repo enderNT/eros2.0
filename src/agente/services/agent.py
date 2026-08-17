@@ -89,14 +89,16 @@ class AgentResponder:
         )
         self._messages, self._summaries, self._window_limit = messages, summaries, window_limit
 
-    async def __call__(self, key: ContactKey, text: str) -> str:
+    async def __call__(self, key: ContactKey, text: str, directives: str | None = None) -> str:
         definitions, handlers = self._tools_for_contact(key)
         summary = self._summaries.get(key) if self._summaries is not None else None
         previous_tools = self._agent._tools
         self._agent._tools = handlers
         try:
             return await self._agent.reply(
-                system_blocks(self._knowledge, self._contacts.get_profile(key), summary),
+                system_blocks(
+                    self._knowledge, self._contacts.get_profile(key), summary, directives
+                ),
                 self._history(key, summary, text),
                 definitions,
             )
@@ -134,7 +136,10 @@ def merge_turns(rows: Iterable[MessageRow]) -> list[dict[str, Any]]:
 
 
 def system_blocks(
-    knowledge: Knowledge, profile: Profile | None, summary: SummaryRow | None
+    knowledge: Knowledge,
+    profile: Profile | None,
+    summary: SummaryRow | None,
+    directives: str | None = None,
 ) -> list[dict[str, Any]]:
     blocks = [
         {
@@ -148,6 +153,11 @@ def system_blocks(
         blocks.append(
             {"type": "text", "text": summary.text, "cache_control": {"type": "ephemeral"}}
         )
+    if directives:
+        # Fourth block, only on a `possible` crisis turn (SPEC §7). No cache
+        # breakpoint: it is present for this turn alone, and caching it would
+        # invalidate the three stable blocks above on every other turn.
+        blocks.append({"type": "text", "text": directives})
     return blocks
 
 

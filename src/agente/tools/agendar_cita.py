@@ -10,16 +10,23 @@ confirms it (TASKS T9b).
 The patient fills in their own name and email on that page, which is why
 this tool does not take them: a model-invented email would silently send
 the confirmation nowhere.
+
+The link carries an opaque `utm_content` token so the webhook can tell whose
+booking came back. It is a random id, never the phone number: the URL leaves
+our control the moment we send it.
 """
 
 from __future__ import annotations
 
+import secrets
+from collections.abc import Callable
 from datetime import datetime, timedelta
+from urllib.parse import urlencode, urlparse, urlunparse
 
 from ..domain.contacts import ContactKey
 from ..domain.scheduling import Slot, is_bookable
 from ..ports.calendar import CalendarSlot
-from ..ports.store import AppointmentsRepository
+from ..ports.store import AppointmentsRepository, BookingTokensRepository
 
 BOOKING_BUFFER = timedelta(minutes=10)
 EXPIRED = "Ese horario ya no está disponible. Ofrece otro de los horarios vigentes."
@@ -35,11 +42,21 @@ def link_instructions(url: str) -> str:
     )
 
 
+def tracked_url(url: str, token: str) -> str:
+    """Append `utm_content` without dropping whatever query the link already has."""
+    parts = urlparse(url)
+    query = f"{parts.query}&" if parts.query else ""
+    return urlunparse(parts._replace(query=query + urlencode({"utm_content": token})))
+
+
 async def agendar_cita(
     appointments: AppointmentsRepository,
+    tokens: BookingTokensRepository,
     key: ContactKey,
     slot: CalendarSlot,
     now: datetime,
+    *,
+    make_token: Callable[[], str] = lambda: secrets.token_urlsafe(16),
 ) -> str:
     if not is_bookable(Slot(slot.start_utc, slot.end_utc), now, BOOKING_BUFFER):
         return EXPIRED
@@ -52,4 +69,6 @@ async def agendar_cita(
         return ALREADY_BOOKED
     if not slot.booking_url:
         return NO_LINK
-    return link_instructions(slot.booking_url)
+    token = make_token()
+    tokens.issue(token, key, slot.start_utc, now)
+    return link_instructions(tracked_url(slot.booking_url, token))

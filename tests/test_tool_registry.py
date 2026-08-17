@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from agente.adapters.store.appointments import SqliteAppointmentsRepository
+from agente.adapters.store.booking_tokens import SqliteBookingTokensRepository
 from agente.adapters.store.contacts import SqliteContactsRepository
 from agente.domain.contacts import ContactKey
 from agente.domain.errors import CalendlyError
@@ -43,6 +44,7 @@ def tools(db_conn, mutes):
             mutes=mutes,
             calendar=calendar or FakeCalendar(),
             appointments=SqliteAppointmentsRepository(db_conn),
+            booking_tokens=SqliteBookingTokensRepository(db_conn),
             key=KEY,
             timezone="America/Mexico_City",
             now=lambda: NOW,

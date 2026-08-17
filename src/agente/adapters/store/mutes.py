@@ -45,6 +45,7 @@ class SqliteMutesRepository:
         actor: str,
         reason: str,
         until: datetime | None = None,
+        urgent: bool = False,
     ) -> None:
         try:
             with self._conn:
@@ -61,7 +62,7 @@ class SqliteMutesRepository:
                         optional_utc_iso(until),
                     ),
                 )
-                self._audit(now, actor, "contact_muted", reason, key=key)
+                self._audit(now, actor, "contact_muted", reason, key=key, urgent=urgent)
         except sqlite3.Error as exc:
             raise StoreError(str(exc)) from exc
 

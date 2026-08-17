@@ -157,7 +157,10 @@ To lift the barrier, a human moves this block down past the tasks they have appr
 
 → result: authenticated mobile-first Jinja2/HTMX panel live — signed expiring session,
 local HTMX/static assets, live Kapso conversation list, contact/number/global mute controls
-with audit and expiry display, and traces placeholder. 3 behavioral panel tests green.
+with audit and expiry display, and the trace list. 5 behavioral panel tests green.
+Revisited 2026-08-17: rows are grouped one per contact (Kapso opens a new conversation
+after 24 h of silence), the Kapso conversation status is rendered in Spanish, and five
+inline `i` hints explain the switches and the open/closed status.
 
 Needs T2 and T4. §3, §11, and the panel decision in `PROJECT.md`.
 
@@ -250,16 +253,16 @@ than a crash, and the system blocks are assembled in the specified order with br
 
 Acceptance: `pytest -q` green; no `anthropic` import outside `adapters/anthropic/`.
 
-## [~] T9 — Calendly adapter and the scheduling tools
+## [x] T9 — Calendly adapter and the scheduling tools
+
+→ result: availability, slot listing and the booking handover are live and registered in
+`tools/registry.py`; the model lists slots, gets an ISO identifier per slot, and can only
+book an identifier that live availability still returns. The webhook half moved to T9b and
+is also done, so the appointment and the profile are now written for real. DST is covered
+in `test_domain_scheduling.py` (where the conversion lives) and at the confirmation level
+in `test_booking.py`.
 
 Needs T3, T8. §6. **The highest-risk area — v2's real bugs lived here.**
-
-**Partly done (2026-08-17).** `adapters/calendly/client.py`, `tools/ver_horarios.py`,
-`tools/agendar_cita.py` exist and are now registered in the agent's tool surface through
-`tools/registry.py`: the model lists slots, gets an ISO identifier per slot, and can only
-book an identifier that live availability still returns. **Still open:**
-`POST /webhook/calendly` (token + HMAC, status update on cancel/reschedule), writing the
-appointment into the durable profile (`next_appointment_utc`), and the DST-boundary test.
 
 - `adapters/calendly/client.py`: availability for the configured event type, invitee
   creation with the location kind the event type requires, HMAC signature verification in
@@ -294,7 +297,17 @@ rather than an empty string.
 
 Acceptance: `pytest -q` green.
 
-## [ ] T9b — Calendly webhook: the appointment becomes real
+## [x] T9b — Calendly webhook: the appointment becomes real
+
+→ result: `agendar_cita` mints an opaque `utm_content` token (migration
+`0002_booking_token.sql`, `adapters/store/booking_tokens.py`); `signature.py` now verifies
+the real scheme (`t=…,v1=…` over `f"{t}.{raw_body}"`, 5-minute tolerance, fails closed on a
+missing key); `services/booking.py` writes the appointment, updates the durable profile and
+sends one confirmation in clinic local time; `POST /webhook/calendly` verifies inline and
+401s a forged or stale delivery. Idempotent on `calendly_event_id` (the `find` check plus
+the unique index as backstop); an unknown token is logged and ignored. 25 tests.
+**Registering the subscription in Calendly and setting `CALENDLY_SIGNING_KEY` is still an
+operator step; until it is set the route rejects everything.**
 
 Needs T9 (done: availability + slot link). §6. **Decided 2026-08-17 with the owner:**
 Calendly's public API cannot book on a patient's behalf, so `agendar_cita` only hands over
@@ -329,7 +342,14 @@ no-op; `invitee.canceled` flipping the status; an unknown `utm_content` logged a
 Acceptance: `pytest -q` green. Registering the webhook in Calendly is an **operator**
 action — never run it from an agent task.
 
-## [ ] T11 — Crisis gate
+## [x] T11 — Crisis gate
+
+→ result: `services/crisis.py` classifies the merged inbound text with one Haiku call whose
+verdict comes back through a tool schema with an `enum` — nothing is string-matched. Fails
+closed: an unknown value, a missing tool call, a model error or a timeout are all
+`possible`. `acute` short-circuits (clinic text verbatim, contact muted, urgent audit row,
+zero agent calls); `possible` appends the playbook's crisis section as a fourth system block
+for that turn only, with no cache breakpoint; `none` proceeds. Wired in `app.py`. 14 tests.
 
 Needs T8. §7.
 
@@ -362,7 +382,14 @@ summarizer leaves the window intact.
 
 Acceptance: `pytest -q` green.
 
-## [ ] T13 — Deployment
+## [x] T13 — Deployment
+
+→ result: `Dockerfile` (non-root, single uvicorn process, no dev extras) and
+`docker-compose.yml` with the persistent `agente-data` volume live; the container has been
+built and run against the real Kapso and Calendly APIs this session, serving `/health`, the
+panel and the webhook. `README.md` documents the volume requirement (local and Coolify),
+where the environment variables live, and that pointing the Kapso webhook is an operator
+step. `/health` reports the database as unreachable/not writable instead of crashing.
 
 Needs everything above. §15.
 

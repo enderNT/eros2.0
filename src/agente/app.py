@@ -22,6 +22,7 @@ from .adapters.calendly.client import CalendlyClient
 from .adapters.kapso.client import KapsoClient
 from .adapters.store import db as store_db
 from .adapters.store.appointments import SqliteAppointmentsRepository
+from .adapters.store.booking_tokens import SqliteBookingTokensRepository
 from .adapters.store.contacts import SqliteContactsRepository
 from .adapters.store.messages import SqliteMessagesRepository
 from .adapters.store.mutes import SqliteMutesRepository
@@ -32,7 +33,9 @@ from .domain.contacts import ContactKey
 from .domain.errors import StoreError
 from .logging_setup import setup_logging
 from .services.agent import Agent, AgentResponder
+from .services.booking import BookingService
 from .services.compaction import compact, make_summarizer
+from .services.crisis import make_classifier
 from .services.inbound import InboundService
 from .services.knowledge import Knowledge
 from .tools.registry import build_tools
@@ -49,6 +52,8 @@ log = logging.getLogger(__name__)
 # The rolling summary is capped at ~120 words by its own prompt; this only
 # stops a runaway generation from costing a full conversation's budget.
 _SUMMARY_MAX_TOKENS = 512
+# The crisis pre-gate answers with a single tool call carrying one enum value.
+_CRISIS_MAX_TOKENS = 64
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -66,6 +71,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         traces = SqliteTracesRepository(app.state.db)
         messages = SqliteMessagesRepository(app.state.db)
         summaries = SqliteSummariesRepository(app.state.db)
+        contacts = SqliteContactsRepository(app.state.db)
+        appointments = SqliteAppointmentsRepository(app.state.db)
+        app.state.booking_tokens = SqliteBookingTokensRepository(app.state.db)
         model = AnthropicClient(
             cfg.anthropic_api_key,
             cfg.anthropic_model_conversation,
@@ -83,10 +91,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         responder = AgentResponder(
             Agent(model, {}, max_iterations=cfg.anthropic_max_iterations),
             app.state.knowledge,
-            SqliteContactsRepository(app.state.db),
+            contacts,
             lambda key: _agent_tools(app, key),
             messages=messages,
             summaries=summaries,
+        )
+        crisis_classifier = make_classifier(
+            AnthropicClient(
+                cfg.anthropic_api_key, cfg.anthropic_model_crisis, _CRISIS_MAX_TOKENS, traces
+            )
+        )
+        app.state.booking = BookingService(
+            tokens=app.state.booking_tokens,
+            appointments=appointments,
+            contacts=contacts,
+            messages=messages,
+            channel=app.state.channel,
+            timezone=cfg.calendly_timezone,
+            address=cfg.calendly_location_value,
         )
 
         async def compactor(key: ContactKey) -> bool:
@@ -105,7 +127,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             SqliteMutesRepository(app.state.db),
             app.state.channel,
             responder=responder,
+            crisis_classifier=crisis_classifier,
             crisis_message=cfg.crisis_message,
+            crisis_directives=app.state.knowledge.crisis_directives(),
             debounce_seconds=cfg.debounce_seconds,
             compactor=compactor,
         )
@@ -157,6 +181,7 @@ def _agent_tools(app: FastAPI, key: ContactKey):
         mutes=SqliteMutesRepository(app.state.db),
         calendar=app.state.calendar,
         appointments=SqliteAppointmentsRepository(app.state.db),
+        booking_tokens=app.state.booking_tokens,
         key=key,
         timezone=app.state.settings.calendly_timezone,
     )

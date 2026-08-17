@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
+# The playbook section the crisis gate lifts out for a `possible` verdict.
+_CRISIS_HEADING = re.compile(r"crisis|riesgo", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +20,18 @@ class Section:
 class Knowledge:
     def __init__(self, playbook: str, sections: list[Section]) -> None:
         self.playbook, self.sections = playbook, sections
+        self.playbook_sections = parse_sections(playbook)
+
+    def crisis_directives(self) -> str:
+        """The playbook's crisis section, for the fourth system block (SPEC §7).
+
+        Empty when the playbook has no such section: the gate then adds no
+        block rather than inventing guidance for a patient at risk.
+        """
+        for section in self.playbook_sections:
+            if _CRISIS_HEADING.search(section.heading):
+                return f"{section.heading}\n{section.body}".strip()
+        return ""
 
     @classmethod
     def load(cls, playbook_path: Path, wiki_path: Path) -> Knowledge:

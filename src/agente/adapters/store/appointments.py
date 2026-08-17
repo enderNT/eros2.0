@@ -41,17 +41,17 @@ class SqliteAppointmentsRepository:
             " ORDER BY slot_utc",
             (key.phone_number_id, key.contact_phone),
         ).fetchall()
-        return [
-            AppointmentRow(
-                row["id"],
-                key,
-                row["calendly_event_id"],
-                parse_utc_iso(row["slot_utc"]),
-                row["status"],
-                parse_utc_iso(row["created_at"]),
-            )
-            for row in rows
-        ]
+        return [_row(row) for row in rows]
+
+    def find(self, calendly_event_id: str) -> AppointmentRow | None:
+        """Lookup by Calendly's event URI — the identity a webhook delivery carries."""
+        try:
+            row = self._conn.execute(
+                "SELECT * FROM appointment WHERE calendly_event_id = ?", (calendly_event_id,)
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise StoreError(str(exc)) from exc
+        return _row(row) if row is not None else None
 
     def update_status(self, calendly_event_id: str, status: str, now: datetime) -> bool:
         try:
@@ -63,3 +63,14 @@ class SqliteAppointmentsRepository:
             return cursor.rowcount > 0
         except sqlite3.Error as exc:
             raise StoreError(str(exc)) from exc
+
+
+def _row(row: sqlite3.Row) -> AppointmentRow:
+    return AppointmentRow(
+        row["id"],
+        ContactKey(row["phone_number_id"], row["contact_phone"]),
+        row["calendly_event_id"],
+        parse_utc_iso(row["slot_utc"]),
+        row["status"],
+        parse_utc_iso(row["created_at"]),
+    )

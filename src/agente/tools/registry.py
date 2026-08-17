@@ -20,7 +20,7 @@ from typing import Any
 from ..domain.contacts import ContactKey
 from ..domain.errors import CalendlyError, DomainError
 from ..ports.calendar import Calendar, CalendarSlot
-from ..ports.store import AppointmentsRepository, MutesRepository
+from ..ports.store import AppointmentsRepository, BookingTokensRepository, MutesRepository
 from ..services.knowledge import Knowledge
 from .agendar_cita import agendar_cita
 from .buscar_wiki import buscar_wiki
@@ -115,6 +115,7 @@ def build_tools(
     mutes: MutesRepository,
     calendar: Calendar,
     appointments: AppointmentsRepository,
+    booking_tokens: BookingTokensRepository,
     key: ContactKey,
     timezone: str,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
@@ -142,7 +143,7 @@ def build_tools(
         if slot is None:
             return UNKNOWN_SLOT
         try:
-            return await agendar_cita(appointments, key, slot, moment)
+            return await agendar_cita(appointments, booking_tokens, key, slot, moment)
         except DomainError:
             log.error("tool_failed", extra={"tool": "agendar_cita", "stage": "store"})
             return STORE_DOWN
