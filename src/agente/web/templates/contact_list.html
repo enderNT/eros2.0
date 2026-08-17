@@ -6,6 +6,7 @@
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 <div id="kill-switch">{% include "global_kill_switch.html" %}</div>
 <div id="booking-followup">{% include "booking_followup_control.html" %}</div>
+<div id="appointment-reminder-settings">{% include "appointment_reminder_settings.html" %}</div>
 {% set phone_number_id = request.app.state.settings.kapso_phone_number_id %}
 {% set number_muted = number_muted %}
 <div id="number-switch">{% include "number_mute_toggle.html" %}</div>
@@ -33,7 +34,7 @@
     {% else %}{{ row.status or "—" }}{% endif %}
   </td>
 </tr>
-{% if row.contact_phone %}<tr><td colspan="3">{% set key = namespace(phone_number_id=request.app.state.settings.kapso_phone_number_id, contact_phone=row.contact_phone) %}{% set mute_state = mute_states[row.contact_phone] %}{% set purged = none %}{% include "contact_controls.html" %}</td></tr>{% endif %}
+{% if row.contact_phone %}<tr><td colspan="3">{% set key = namespace(phone_number_id=request.app.state.settings.kapso_phone_number_id, contact_phone=row.contact_phone) %}{% set mute_state = mute_states[row.contact_phone] %}{% set appointment = appointment_states.get(row.contact_phone) %}{% set purged = none %}{% include "contact_controls.html" %}</td></tr>{% endif %}
 {% else %}<tr><td colspan="3">No hay conversaciones.</td></tr>{% endfor %}
   </tbody>
 </table>

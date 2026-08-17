@@ -68,7 +68,7 @@ class BookingFollowups:
 
     async def send_due(self, now: datetime | None = None) -> None:
         moment = now or self._now()
-        for row in self._outbox.due(moment):
+        for row in self._outbox.due(moment, kind="booking_followup"):
             if not self._outbox.consume(row.id, moment):
                 continue
             if self._mutes.is_bot_muted(row.key, moment) or _is_confirmed(

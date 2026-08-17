@@ -64,6 +64,15 @@ class SqliteAppointmentsRepository:
         except sqlite3.Error as exc:
             raise StoreError(str(exc)) from exc
 
+    def scheduled(self) -> list[AppointmentRow]:
+        try:
+            rows = self._conn.execute(
+                "SELECT * FROM appointment WHERE status = 'scheduled' ORDER BY slot_utc"
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise StoreError(str(exc)) from exc
+        return [_row(row) for row in rows]
+
 
 def _row(row: sqlite3.Row) -> AppointmentRow:
     return AppointmentRow(

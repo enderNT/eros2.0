@@ -42,6 +42,7 @@ from .services.crisis import make_classifier
 from .services.followup import BookingFollowups
 from .services.inbound import InboundService
 from .services.knowledge import Knowledge
+from .services.reminders import AppointmentReminders
 from .tools.registry import build_tools
 from .web.health import router as health_router
 from .web.panel import mount_static
@@ -112,6 +113,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 cfg.anthropic_api_key, cfg.anthropic_model_crisis, _CRISIS_MAX_TOKENS, traces
             )
         )
+        reminders = AppointmentReminders(
+            outbox=outbox,
+            appointments=appointments,
+            messages=messages,
+            mutes=SqliteMutesRepository(app.state.db),
+            channel=app.state.channel,
+            timezone=cfg.calendly_timezone,
+            minutes_before=lambda: runtime_settings.appointment_reminder_minutes(
+                cfg.appointment_reminder_minutes
+            ),
+        )
+        app.state.appointment_reminders = reminders
+        # Covers appointments confirmed before this feature was deployed.
+        if app.state.db is not None:
+            reminders.reschedule_pending(datetime.now(UTC))
         app.state.booking = BookingService(
             tokens=app.state.booking_tokens,
             appointments=appointments,
@@ -119,6 +135,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             messages=messages,
             outbox=outbox,
             channel=app.state.channel,
+            reminders=reminders,
             timezone=cfg.calendly_timezone,
             address=cfg.calendly_location_value,
         )
@@ -161,7 +178,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             on_outbound=followups.schedule_from_outbound,
         )
         followup_task = (
-            asyncio.create_task(_run_followups(followups, cfg.booking_followup_poll_seconds))
+            asyncio.create_task(
+                _run_followups(followups, reminders, cfg.booking_followup_poll_seconds)
+            )
             if app.state.db is not None
             else None
         )
@@ -185,10 +204,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-async def _run_followups(followups: BookingFollowups, poll_seconds: float) -> None:
+async def _run_followups(
+    followups: BookingFollowups, reminders: AppointmentReminders, poll_seconds: float
+) -> None:
     while True:
         try:
             await followups.send_due()
+            await reminders.send_due()
         except StoreError:
             log.error("booking_followup_poll_failed")
         await asyncio.sleep(poll_seconds)

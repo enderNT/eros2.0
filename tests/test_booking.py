@@ -6,10 +6,13 @@ import pytest
 
 from agente.adapters.store.appointments import SqliteAppointmentsRepository
 from agente.adapters.store.booking_tokens import SqliteBookingTokensRepository
+from agente.adapters.store.messages import SqliteMessagesRepository
+from agente.adapters.store.mutes import SqliteMutesRepository
 from agente.adapters.store.outbox import SqliteOutboxRepository
 from agente.domain.contacts import ContactKey
 from agente.domain.errors import KapsoError
 from agente.services.booking import BookingService, confirmation_text
+from agente.services.reminders import AppointmentReminders
 
 NOW = datetime(2026, 8, 17, 12, tzinfo=UTC)
 SLOT = datetime(2026, 8, 18, 17, tzinfo=UTC)  # 11:00 in Mexico City
@@ -33,7 +36,7 @@ class FakeChannel:
 
 @pytest.fixture()
 def booking(db_conn, contacts, messages):
-    def _make(channel=None, address=""):
+    def _make(channel=None, address="", reminders=None):
         return BookingService(
             tokens=SqliteBookingTokensRepository(db_conn),
             appointments=SqliteAppointmentsRepository(db_conn),
@@ -41,6 +44,7 @@ def booking(db_conn, contacts, messages):
             messages=messages,
             outbox=SqliteOutboxRepository(db_conn),
             channel=channel or FakeChannel(),
+            reminders=reminders,
             timezone="America/Mexico_City",
             address=address,
             now=lambda: NOW,
@@ -59,6 +63,9 @@ def _created(token: str = "tok-1", event: str = EVENT) -> dict:
         "name": "Ana",
         "email": "ana@example.com",
         "tracking": {"utm_content": token},
+        "questions_and_answers": [
+            {"question": "Número de teléfono", "answer": "55 1234 5678"}
+        ],
         "scheduled_event": {"start_time": "2026-08-18T17:00:00Z"},
     }
 
@@ -106,6 +113,17 @@ async def test_an_unknown_token_is_ignored(db_conn, booking):
 
 
 @pytest.mark.asyncio
+async def test_a_phone_answer_that_does_not_match_is_not_linked(db_conn, booking):
+    _issue(db_conn)
+    channel = FakeChannel()
+    payload = _created()
+    payload["questions_and_answers"][0]["answer"] = "+52 55 0000 0000"
+    await booking(channel).handle("invitee.created", payload)
+    assert SqliteAppointmentsRepository(db_conn).for_contact(KEY) == []
+    assert channel.sent == []
+
+
+@pytest.mark.asyncio
 async def test_the_address_is_only_mentioned_when_configured(db_conn, booking):
     _issue(db_conn)
     channel = FakeChannel()
@@ -142,6 +160,27 @@ async def test_a_failed_notification_keeps_the_appointment(db_conn, booking):
     _issue(db_conn)
     await booking(FakeChannel(fail=True)).handle("invitee.created", _created())
     assert SqliteAppointmentsRepository(db_conn).find(EVENT) is not None
+
+
+@pytest.mark.asyncio
+async def test_confirmed_booking_schedules_and_cancel_removes_its_reminder(db_conn, booking):
+    _issue(db_conn)
+    channel = FakeChannel()
+    reminders = AppointmentReminders(
+        outbox=SqliteOutboxRepository(db_conn),
+        appointments=SqliteAppointmentsRepository(db_conn),
+        messages=SqliteMessagesRepository(db_conn),
+        mutes=SqliteMutesRepository(db_conn),
+        channel=channel,
+        timezone="America/Mexico_City",
+        minutes_before=lambda: 60,
+        now=lambda: NOW,
+    )
+    service = booking(channel, reminders=reminders)
+    await service.handle("invitee.created", _created())
+    assert SqliteOutboxRepository(db_conn).pending_appointment_reminder(KEY) is not None
+    await service.handle("invitee.canceled", {"event": EVENT})
+    assert SqliteOutboxRepository(db_conn).pending_appointment_reminder(KEY) is None
 
 
 def test_the_confirmation_never_doubles_a_period():

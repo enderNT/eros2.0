@@ -11,10 +11,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from ..adapters.store.appointments import SqliteAppointmentsRepository
 from ..adapters.store.mutes import SqliteMutesRepository
 from ..adapters.store.purge import SqlitePurgeRepository
 from ..adapters.store.settings import (
+    MAX_APPOINTMENT_REMINDER_MINUTES,
     MAX_BOOKING_FOLLOWUP_MINUTES,
+    MIN_APPOINTMENT_REMINDER_MINUTES,
     MIN_BOOKING_FOLLOWUP_MINUTES,
     SqliteRuntimeSettingsRepository,
 )
@@ -29,6 +32,7 @@ _ROOT = Path(__file__).parent
 templates = Jinja2Templates(directory=str(_ROOT / "templates"))
 templates.env.globals["mask_phone"] = mask_phone
 _SLIDER_STEPS = (1, 2, 3, 5, 6, 9, 10, 15, 18, 30, 45, 90)
+_REMINDER_SLIDER_STEPS = (1, 2, 5, 10, 15, 30, 60, 120, 360, 720, 1440, 10080)
 
 
 def mount_static(app) -> None:  # type: ignore[no-untyped-def]
@@ -91,12 +95,36 @@ def _booking_followup_minutes(request: Request) -> int:
     )
 
 
+def _appointment_reminder_minutes(request: Request) -> int:
+    return _runtime_settings(request).appointment_reminder_minutes(
+        request.app.state.settings.appointment_reminder_minutes
+    )
+
+
 def _slider_step(value: str) -> int:
     try:
         step = int(value)
     except ValueError:
         return 1
     return step if step in _SLIDER_STEPS else 1
+
+
+def _reminder_slider_step(value: str) -> int:
+    try:
+        step = int(value)
+    except ValueError:
+        return 1
+    return step if step in _REMINDER_SLIDER_STEPS else 1
+
+
+def _minute_label(minutes: int) -> str:
+    if minutes % 1440 == 0:
+        days = minutes // 1440
+        return f"{days} día" if days == 1 else f"{days} días"
+    if minutes % 60 == 0:
+        hours = minutes // 60
+        return f"{hours} hora" if hours == 1 else f"{hours} horas"
+    return f"{minutes} min"
 
 
 @router.get("/admin/login", response_class=HTMLResponse)
@@ -136,6 +164,15 @@ async def panel(request: Request) -> HTMLResponse:
         for row in conversations
         if row.contact_phone
     }
+    appointments = SqliteAppointmentsRepository(request.app.state.db)
+    appointment_states = {}
+    for row in conversations:
+        if not row.contact_phone:
+            continue
+        key = ContactKey(request.app.state.settings.kapso_phone_number_id, row.contact_phone)
+        appointment_states[row.contact_phone] = next(
+            (item for item in appointments.for_contact(key) if item.status == "scheduled"), None
+        )
     return templates.TemplateResponse(
         request,
         "contact_list.html",
@@ -150,6 +187,14 @@ async def panel(request: Request) -> HTMLResponse:
             "booking_followup_slider_step": 1,
             "booking_followup_steps": _SLIDER_STEPS,
             "booking_followup_step_count": MAX_BOOKING_FOLLOWUP_MINUTES,
+            "appointment_reminder_minutes": _appointment_reminder_minutes(request),
+            "appointment_reminder_slider_step": 1,
+            "appointment_reminder_steps": _REMINDER_SLIDER_STEPS,
+            "appointment_reminder_step_count": MAX_APPOINTMENT_REMINDER_MINUTES,
+            "appointment_reminder_min": MIN_APPOINTMENT_REMINDER_MINUTES,
+            "appointment_reminder_max": MAX_APPOINTMENT_REMINDER_MINUTES,
+            "minute_label": _minute_label,
+            "appointment_states": appointment_states,
             "error": error,
         },
     )
@@ -264,6 +309,59 @@ async def booking_followup(request: Request) -> HTMLResponse:
             "booking_followup_steps": _SLIDER_STEPS,
             "booking_followup_step_count": MAX_BOOKING_FOLLOWUP_MINUTES // slider_step,
         },
+    )
+
+
+@router.post(
+    "/admin/appointment-reminder-settings",
+    response_class=HTMLResponse,
+    dependencies=[Depends(require_panel_session)],
+)
+async def appointment_reminder_settings(request: Request) -> HTMLResponse:
+    form, now = await _form(request), datetime.now(UTC)
+    try:
+        minutes = int(form.get("minutes", ""))
+        _runtime_settings(request).set_appointment_reminder_minutes(minutes, now)
+        request.app.state.appointment_reminders.reschedule_pending(now)
+    except ValueError:
+        minutes = _appointment_reminder_minutes(request)
+    slider_step = _reminder_slider_step(form.get("slider_step", "1"))
+    return templates.TemplateResponse(
+        request,
+        "appointment_reminder_settings.html",
+        {
+            "appointment_reminder_minutes": minutes,
+            "appointment_reminder_min": MIN_APPOINTMENT_REMINDER_MINUTES,
+            "appointment_reminder_max": MAX_APPOINTMENT_REMINDER_MINUTES,
+            "appointment_reminder_slider_step": slider_step,
+            "appointment_reminder_steps": _REMINDER_SLIDER_STEPS,
+            "appointment_reminder_step_count": MAX_APPOINTMENT_REMINDER_MINUTES // slider_step,
+            "minute_label": _minute_label,
+        },
+    )
+
+
+@router.post(
+    "/admin/appointment-reminder",
+    response_class=HTMLResponse,
+    dependencies=[Depends(require_panel_session)],
+)
+async def appointment_reminder(request: Request) -> HTMLResponse:
+    form = await _form(request)
+    key = ContactKey(form["phone_number_id"], form["contact_phone"])
+    result = await request.app.state.appointment_reminders.send_now(key)
+    appointment = next(
+        (
+            item
+            for item in SqliteAppointmentsRepository(request.app.state.db).for_contact(key)
+            if item.status == "scheduled"
+        ),
+        None,
+    )
+    return templates.TemplateResponse(
+        request,
+        "appointment_reminder_trigger.html",
+        {"key": key, "appointment": appointment, "reminder_result": result},
     )
 
 

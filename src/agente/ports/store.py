@@ -107,12 +107,18 @@ class OutboxRow:
     due_at: datetime
     booking_token: str | None
     slot_utc: datetime | None
+    kind: str
+    appointment_event_id: str | None
 
 
 class RuntimeSettingsRepository(Protocol):
     def booking_followup_minutes(self, default: int) -> int: ...
 
     def set_booking_followup_minutes(self, minutes: int, now: datetime) -> None: ...
+
+    def appointment_reminder_minutes(self, default: int) -> int: ...
+
+    def set_appointment_reminder_minutes(self, minutes: int, now: datetime) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,6 +236,8 @@ class AppointmentsRepository(Protocol):
 
     def update_status(self, calendly_event_id: str, status: str, now: datetime) -> bool: ...
 
+    def scheduled(self) -> list[AppointmentRow]: ...
+
 
 class BookingTokensRepository(Protocol):
     def issue(self, token: str, key: ContactKey, slot_utc: datetime, now: datetime) -> None: ...
@@ -247,13 +255,30 @@ class OutboxRepository(Protocol):
         due_at: datetime,
     ) -> None: ...
 
-    def due(self, now: datetime, limit: int = 20) -> list[OutboxRow]: ...
+    def schedule_appointment_reminder(
+        self,
+        key: ContactKey,
+        calendly_event_id: str,
+        slot_utc: datetime,
+        text: str,
+        due_at: datetime,
+        *,
+        replace_pending: bool = False,
+    ) -> None: ...
+
+    def due(
+        self, now: datetime, limit: int = 20, *, kind: str | None = None
+    ) -> list[OutboxRow]: ...
 
     def consume(self, row_id: int, now: datetime) -> bool: ...
 
     def cancel_for_contact(self, key: ContactKey) -> None: ...
 
     def cancel_for_token(self, booking_token: str) -> None: ...
+
+    def cancel_for_appointment(self, calendly_event_id: str) -> None: ...
+
+    def pending_appointment_reminder(self, key: ContactKey) -> OutboxRow | None: ...
 
 
 class PurgeRepository(Protocol):

@@ -111,6 +111,23 @@ def test_booking_followup_control_round_trip(settings):
         assert 'value="10"' in invalid.text
 
 
+def test_appointment_reminder_control_is_global_and_supports_one_minute_testing(settings):
+    with TestClient(create_app(settings)) as client:
+        _login(client)
+        page = client.get("/admin")
+        assert "Recordatorio de cita" in page.text
+        assert 'id="appointment-reminder-slider"' in page.text
+        assert 'min="1"' in page.text
+        assert 'max="10080"' in page.text
+        response = client.post(
+            "/admin/appointment-reminder-settings", data={"minutes": "2", "slider_step": "1"}
+        )
+        assert response.status_code == 200
+        assert 'value="2"' in response.text
+        runtime = SqliteRuntimeSettingsRepository(client.app.state.db)
+        assert runtime.appointment_reminder_minutes(default=1440) == 2
+
+
 def test_one_row_per_contact_keeps_the_most_recent_conversation():
     from datetime import UTC, datetime
 

@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     reply_chunk_delay_seconds: float = 1.0
     booking_followup_minutes: int = 90
     booking_followup_poll_seconds: float = 15.0
+    appointment_reminder_minutes: int = 1440
     crisis_message: str
 
     # Logging

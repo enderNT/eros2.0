@@ -48,7 +48,8 @@ def link_instructions(url: str) -> str:
         "No lo acortes, no le quites nada después del signo '?', no lo reescribas"
         " ni lo pongas en un texto con formato de enlace. Si le quitas la parte"
         " final, la cita no se podrá asociar a este paciente.\n"
-        "IMPORTANTE: la cita NO está agendada todavía. Ahí completa su nombre y correo."
+        "IMPORTANTE: la cita NO está agendada todavía. Ahí completa su nombre, correo y"
+        " número de WhatsApp (el mismo desde el que escribe)."
         " No le digas que ya quedó confirmada; pídele que te avise cuando termine."
     )
 

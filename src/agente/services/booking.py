@@ -19,6 +19,7 @@ Two properties matter more than anything else here:
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -37,6 +38,7 @@ from ..ports.store import (
     OutboxRepository,
     Profile,
 )
+from .reminders import AppointmentReminders
 
 log = logging.getLogger(__name__)
 
@@ -79,6 +81,7 @@ class BookingService:
         messages: MessagesRepository,
         outbox: OutboxRepository,
         channel: Channel,
+        reminders: AppointmentReminders | None = None,
         timezone: str,
         address: str = "",
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
@@ -86,6 +89,7 @@ class BookingService:
         self._tokens, self._appointments = tokens, appointments
         self._contacts, self._messages = contacts, messages
         self._outbox, self._channel = outbox, channel
+        self._reminders = reminders
         self._timezone, self._address, self._now = timezone, address, now
 
     async def handle(self, event: str, payload: dict[str, Any]) -> None:
@@ -111,6 +115,11 @@ class BookingService:
             # guessing whose it is would confirm an appointment to the wrong person.
             log.info("calendly_booking_unlinked", extra={"has_token": bool(token)})
             return
+        if not _matches_contact_phone(payload, record.key.contact_phone):
+            # The personalized URL alone is not proof of identity: it can be
+            # forwarded. The number collected by Calendly must corroborate it.
+            log.info("calendly_booking_phone_mismatch")
+            return
         self._outbox.cancel_for_token(token)
         now = self._now()
         slot = _start_time(payload) or record.slot_utc
@@ -123,6 +132,8 @@ class BookingService:
             log.info("calendly_delivery_duplicate", extra={"event": CREATED})
             return
         self._save_profile(record.key, slot, now, payload)
+        if self._reminders is not None:
+            self._reminders.schedule(record.key, event_uri, slot, now)
         await self._notify(record.key, confirmation_text(slot, self._timezone, now, self._address))
 
     async def _canceled(self, payload: dict[str, Any]) -> None:
@@ -136,6 +147,7 @@ class BookingService:
             return
         now = self._now()
         self._appointments.update_status(event_uri, "canceled", now)
+        self._outbox.cancel_for_appointment(event_uri)
         self._clear_next_appointment(existing.key, now)
         await self._notify(existing.key, CANCELED_TEXT)
 
@@ -203,3 +215,34 @@ def _start_time(payload: dict[str, Any]) -> datetime | None:
 def _clean(value: Any) -> str | None:
     text = str(value).strip() if value else ""
     return text or None
+
+
+def _matches_contact_phone(payload: dict[str, Any], contact_phone: str) -> bool:
+    """Match the required Calendly phone answer to the WhatsApp identity.
+
+    Calendly questions are clinic-configurable, so we intentionally only read
+    answers whose label says phone/cell/WhatsApp. Matching the final ten
+    digits supports a Mexican local entry (``55 1234 5678``) as well as its
+    E.164 form while avoiding arbitrary numeric answers such as an age.
+    """
+    expected = _phone_digits(contact_phone)
+    if len(expected) < 10:
+        return False
+    values: list[object] = [payload.get("phone"), payload.get("phone_number")]
+    for item in payload.get("questions_and_answers") or []:
+        if not isinstance(item, dict):
+            continue
+        question = str(item.get("question") or "").lower()
+        if any(
+            word in question for word in ("tel", "phone", "cel", "whatsapp", "móvil", "movil")
+        ):
+            values.append(item.get("answer"))
+    for value in values:
+        candidate = _phone_digits(value)
+        if candidate and (candidate == expected or candidate[-10:] == expected[-10:]):
+            return True
+    return False
+
+
+def _phone_digits(value: object) -> str:
+    return re.sub(r"\D", "", str(value or "")).removeprefix("00")

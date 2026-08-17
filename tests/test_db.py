@@ -57,7 +57,7 @@ def test_migrate_creates_every_table(db_conn):
 
 def test_migrate_records_the_applied_version(db_conn):
     rows = db_conn.execute("SELECT version FROM schema_version").fetchall()
-    assert [row["version"] for row in rows] == [1, 2, 3, 4, 5]
+    assert [row["version"] for row in rows] == [1, 2, 3, 4, 5, 6]
 
 
 def test_runtime_followup_setting_is_global_and_bounded(db_conn):
@@ -67,6 +67,11 @@ def test_runtime_followup_setting_is_global_and_bounded(db_conn):
     assert settings.booking_followup_minutes(default=90) == 1
     settings.set_booking_followup_minutes(0, NOW)
     assert settings.booking_followup_minutes(default=90) == 0
+    assert settings.appointment_reminder_minutes(default=1440) == 1440
+    settings.set_appointment_reminder_minutes(2, NOW)
+    assert settings.appointment_reminder_minutes(default=1440) == 2
+    with pytest.raises(ValueError, match="between 1 and 10080"):
+        settings.set_appointment_reminder_minutes(10081, NOW)
     with pytest.raises(ValueError, match="between 0 and 90"):
         settings.set_booking_followup_minutes(91, NOW)
 

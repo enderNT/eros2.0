@@ -1,6 +1,7 @@
 {% from "macros.html" import hint %}
 <div class="contact-controls">
   {% include "contact_mute_toggle.html" %}
+  {% include "appointment_reminder_trigger.html" %}
   <div class="form-action">
     <label><strong>Borrar historial</strong>
       {{ hint("Borra todo lo que guardamos de esta persona: mensajes, resumen, perfil, citas registradas y enlaces de agenda. El bot vuelve a tratarla como si escribiera por primera vez. También reactiva el bot si estaba silenciado. No se puede deshacer, y no cancela nada en Calendly ni borra la conversación en Kapso.") }}
