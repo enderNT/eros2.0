@@ -66,16 +66,18 @@ Full text in `PROJECT.md`; the headline versions:
 - Muting the bot is an **explicit switch we own**, keyed by contact, flipped from our own
   mobile-first control panel. Nothing is inferred from Kapso events.
 - Persistence: **one SQLite file** (WAL) on a Coolify volume. No Postgres.
-- Knowledge: curated markdown wiki inside the cached prompt. No RAG, no embeddings.
+- Knowledge: curated markdown playbook plus a wiki exposed by deterministic lookup. No
+  RAG, no embeddings. The clinic facts and Nora's operating guidance were migrated from
+  `main`; unknown policies remain visibly marked as pending.
 - Memory: durable structured profile + rolling window compacted by token budget.
 - One conversational voice (Sonnet) + narrow Haiku jobs (crisis check, summarization) +
   deterministic scheduling tools.
 
 ## Not decided yet — do not invent these
 
-- **Clinic content.** The playbook and the wiki ship as skeletons with
-  `<<pendiente>>` markers. Prices, services and policies come from the clinic. Never
-  invent them.
+- **Remaining clinic content.** Cancellation/rebooking, confidentiality, first-visit
+  requirements, public team profiles, billing/insurance and the priority crisis channel
+  still need confirmation. Never invent them.
 - **The crisis message text.** Written by the clinic. Boot fails while it is a placeholder.
 - Retention of our own copy of the history, and what deletion means.
 - Whether reminders / proactive outbound are in v3 (they would need an approved template).
