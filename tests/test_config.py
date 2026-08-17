@@ -34,6 +34,7 @@ def test_load_settings_reads_env_and_defaults(clean_env):
     assert cfg.anthropic_api_key == "sk-ant-test"
     assert cfg.kapso_phone_number_id == "1087343774471931"
     assert cfg.db_path == Path("/tmp/agente-config-test.db")
+    assert cfg.content_dir == Path("content")
     # defaults fixed by SPEC §5 / §4 / §8
     assert cfg.anthropic_model_conversation == "claude-sonnet-5"
     assert cfg.anthropic_model_crisis == "claude-haiku-4-5-20251001"

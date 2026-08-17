@@ -52,6 +52,7 @@ class Settings(BaseSettings):
 
     # Storage
     db_path: Path
+    content_dir: Path = Path("content")
 
     # Control panel
     panel_password: str

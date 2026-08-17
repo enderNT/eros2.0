@@ -13,7 +13,6 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
@@ -53,7 +52,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.settings = cfg
         app.state.db = _open_database(cfg)
         app.state.channel = KapsoClient(cfg.kapso_base_url, cfg.kapso_api_key)
-        content_root = Path(__file__).parents[2] / "content"
+        content_root = cfg.content_dir.resolve()
         model = AnthropicClient(
             cfg.anthropic_api_key,
             cfg.anthropic_model_conversation,
@@ -115,10 +114,8 @@ app = create_app()
 
 
 def _agent_tools(app: FastAPI, key):
-    knowledge = Knowledge.load(
-        Path(__file__).parents[2] / "content" / "playbook.md",
-        Path(__file__).parents[2] / "content" / "wiki.md",
-    )
+    content_root = app.state.settings.content_dir.resolve()
+    knowledge = Knowledge.load(content_root / "playbook.md", content_root / "wiki.md")
     return [
         {
             "name": "buscar_wiki",

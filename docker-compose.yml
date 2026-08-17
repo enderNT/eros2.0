@@ -8,5 +8,6 @@ services:
       - agente-data:/data
     environment:
       DB_PATH: /data/agente.db
+      CONTENT_DIR: /app/content
 volumes:
   agente-data:
