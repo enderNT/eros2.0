@@ -6,6 +6,7 @@ from agente.adapters.kapso.payloads import KapsoMessage, KapsoMessageText, Webho
 from agente.adapters.store.messages import SqliteMessagesRepository
 from agente.adapters.store.mutes import SqliteMutesRepository
 from agente.domain.contacts import ContactKey
+from agente.domain.crisis import CrisisVerdict
 from agente.domain.errors import KapsoError
 from agente.services.inbound import FALLBACK, InboundService
 
@@ -88,3 +89,21 @@ async def test_three_message_burst_produces_one_reply(db_conn):
     )
     await asyncio.gather(*(service.handle(_payload(f"burst-{index}")) for index in range(3)))
     assert len(channel.sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_acute_crisis_mutes_and_skips_responder(db_conn):
+    async def acute(_text):
+        return CrisisVerdict.ACUTE
+
+    channel = FakeChannel()
+    service = InboundService(
+        SqliteMessagesRepository(db_conn),
+        SqliteMutesRepository(db_conn),
+        channel,
+        crisis_classifier=acute,
+        crisis_message="mensaje crisis",
+        debounce_seconds=0,
+    )
+    await service.handle(_payload("acute"))
+    assert channel.sent[-1][1] == "mensaje crisis"

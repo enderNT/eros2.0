@@ -67,6 +67,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             SqliteMutesRepository(app.state.db),
             app.state.channel,
             responder=responder,
+            crisis_message=cfg.crisis_message,
             debounce_seconds=cfg.debounce_seconds,
         )
         try:
