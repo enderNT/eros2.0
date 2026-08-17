@@ -18,9 +18,12 @@ from fastapi import FastAPI
 
 from .adapters.kapso.client import KapsoClient
 from .adapters.store import db as store_db
+from .adapters.store.messages import SqliteMessagesRepository
+from .adapters.store.mutes import SqliteMutesRepository
 from .config import Settings, load_settings
 from .domain.errors import StoreError
 from .logging_setup import setup_logging
+from .services.inbound import InboundService
 from .web.health import router as health_router
 from .web.panel import mount_static
 from .web.panel import router as panel_router
@@ -41,6 +44,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.settings = cfg
         app.state.db = _open_database(cfg)
         app.state.channel = KapsoClient(cfg.kapso_base_url, cfg.kapso_api_key)
+        app.state.inbound = InboundService(
+            SqliteMessagesRepository(app.state.db),
+            SqliteMutesRepository(app.state.db),
+            app.state.channel,
+            debounce_seconds=cfg.debounce_seconds,
+        )
         try:
             yield
         finally:

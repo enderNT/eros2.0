@@ -12,9 +12,9 @@ Keep it short. It is a status, not a history: overwrite stale lines instead of a
 
 ## Phase
 
-**T1–T5 complete; T6 is next.** Branch `v3-rebuild`. Scaffold (T1), storage foundation
+**T1–T6 complete; T7 is next.** Branch `v3-rebuild`. Scaffold (T1), storage foundation
 (T2), pure domain logic (T3), Kapso adapter (T4), and local control panel (T5) are in
-place; everything on `main` remains reference-only.
+  place; everything on `main` remains reference-only.
 
 ## What exists right now
 

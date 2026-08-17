@@ -179,7 +179,10 @@ list renders with the Kapso client faked; expiry renders correctly.
 
 Acceptance: `pytest -q` green; the page is usable at 375px wide.
 
-## [ ] T6 — Inbound pipeline with the mute gate
+## [x] T6 — Inbound pipeline with the mute gate
+
+→ result: authenticated background webhook and debounced per-contact inbound pipeline live;
+dedupe, persistence, mute gate, response send/persistence and one fallback covered by tests.
 
 Needs T2, T3, T4. §4. **This is the spine — read §4 in full before starting.**
 

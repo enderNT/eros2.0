@@ -40,7 +40,10 @@ def _payload(message_id: str, text: str = "hola") -> WebhookPayload:
 async def test_duplicate_produces_one_reply(db_conn):
     channel = FakeChannel()
     service = InboundService(
-        SqliteMessagesRepository(db_conn), SqliteMutesRepository(db_conn), channel
+        SqliteMessagesRepository(db_conn),
+        SqliteMutesRepository(db_conn),
+        channel,
+        debounce_seconds=0,
     )
     await service.handle(_payload("in-1"))
     await service.handle(_payload("in-1"))
@@ -54,7 +57,7 @@ async def test_muted_inbound_is_stored_without_send(db_conn):
     now = datetime(2026, 8, 16, tzinfo=UTC)
     mutes.set_mute(key, now, actor="test", reason="test")
     channel = FakeChannel()
-    await InboundService(messages, mutes, channel).handle(_payload("in-2"))
+    await InboundService(messages, mutes, channel, debounce_seconds=0).handle(_payload("in-2"))
     assert channel.sent == []
     assert len(messages.window(key, 10)) == 1
 
@@ -63,7 +66,25 @@ async def test_muted_inbound_is_stored_without_send(db_conn):
 async def test_send_failure_uses_single_fallback_without_retry(db_conn):
     channel = FakeChannel(failures=1)
     await InboundService(
-        SqliteMessagesRepository(db_conn), SqliteMutesRepository(db_conn), channel
+        SqliteMessagesRepository(db_conn),
+        SqliteMutesRepository(db_conn),
+        channel,
+        debounce_seconds=0,
     ).handle(_payload("in-3"))
     assert len(channel.sent) == 2
     assert channel.sent[-1][1] == FALLBACK
+
+
+@pytest.mark.asyncio
+async def test_three_message_burst_produces_one_reply(db_conn):
+    import asyncio
+
+    channel = FakeChannel()
+    service = InboundService(
+        SqliteMessagesRepository(db_conn),
+        SqliteMutesRepository(db_conn),
+        channel,
+        debounce_seconds=0.01,
+    )
+    await asyncio.gather(*(service.handle(_payload(f"burst-{index}")) for index in range(3)))
+    assert len(channel.sent) == 1

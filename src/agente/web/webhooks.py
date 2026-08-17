@@ -3,10 +3,7 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 
 from ..adapters.kapso.payloads import parse_webhook
-from ..adapters.store.messages import SqliteMessagesRepository
-from ..adapters.store.mutes import SqliteMutesRepository
 from ..domain.errors import KapsoError
-from ..services.inbound import InboundService
 
 router = APIRouter()
 
@@ -20,11 +17,6 @@ async def kapso_webhook(request: Request, background_tasks: BackgroundTasks) -> 
         )
     except KapsoError as exc:
         raise HTTPException(status_code=400, detail="invalid webhook") from exc
-    service = InboundService(
-        SqliteMessagesRepository(request.app.state.db),
-        SqliteMutesRepository(request.app.state.db),
-        request.app.state.channel,
-    )
     for payload in payloads:
-        background_tasks.add_task(service.handle, payload)
+        background_tasks.add_task(request.app.state.inbound.handle, payload)
     return Response(status_code=200)
