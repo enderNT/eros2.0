@@ -21,3 +21,7 @@ class InvalidPhoneError(DomainError, ValueError):
 
 class KapsoError(DomainError):
     """Kapso channel (HTTP or webhook) failed. The underlying error is chained."""
+
+
+class ModelError(DomainError):
+    """Language model adapter failed."""
