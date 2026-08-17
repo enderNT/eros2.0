@@ -45,7 +45,7 @@ class KapsoClient:
             transport=transport,
         )
         self._headers = {
-            "Authorization": f"Bearer {api_key}",
+            "X-API-Key": api_key,
             "Content-Type": "application/json",
         }
 
@@ -53,8 +53,14 @@ class KapsoClient:
         await self._client.aclose()
 
     async def send_text(self, phone_number_id: str, to: str, body: str) -> str:
-        url = f"{self._base_url}/whatsapp/phone-numbers/{phone_number_id}/messages"
-        payload: dict[str, Any] = {"to": to, "type": "text", "text": {"body": body}}
+        url = f"{self._base_url}/{phone_number_id}/messages"
+        payload: dict[str, Any] = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to.lstrip("+"),
+            "type": "text",
+            "text": {"body": body},
+        }
         started = time.monotonic()
         try:
             response = await self._client.post(url, json=payload, headers=self._headers)
@@ -71,7 +77,7 @@ class KapsoClient:
             raise KapsoError(f"send_text failed: {exc}") from exc
         latency_ms = int((time.monotonic() - started) * 1000)
         data = response.json()
-        message_id = str(data.get("id", ""))
+        message_id = str((data.get("messages") or [{}])[0].get("id", ""))
         logger.info(
             "kapso.send_text ok",
             extra={

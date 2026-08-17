@@ -47,7 +47,9 @@ def client() -> KapsoClient:
 async def test_send_text_returns_message_id(client: KapsoClient) -> None:
     """A happy-path POST returns the Kapso-assigned message id."""
     expected_id = "kps_msg_abc123"
-    transport = httpx.MockTransport(lambda req: _json_response({"id": expected_id}))
+    transport = httpx.MockTransport(
+        lambda req: _json_response({"messages": [{"id": expected_id}]})
+    )
     client._client = httpx.AsyncClient(
         timeout=httpx.Timeout(2.0), transport=transport,
     )

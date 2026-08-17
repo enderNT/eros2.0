@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     kapso_api_key: str
     kapso_phone_number_id: str
     kapso_webhook_secret: str
-    kapso_base_url: str = "https://api.kapso.ai/platform/v1"
+    kapso_base_url: str = "https://api.kapso.ai/meta/whatsapp/v24.0"
 
     # Calendly
     calendly_token: str
