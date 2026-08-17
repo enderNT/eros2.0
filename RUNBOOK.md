@@ -34,7 +34,20 @@ Anotar la URL. En los pasos siguientes es `<URL>`.
 
 Necesita `CALENDLY_TOKEN`. Se hace una sola vez.
 
-Primero, obtener los URIs de la cuenta:
+Cada valor del cuerpo se obtiene así. **No** se deben enviar los textos con ángulos
+(`<URL>`, `<USER_URI>`…): son marcadores para sustituir.
+
+| Campo | Valor y de dónde sale |
+| --- | --- |
+| `CALENDLY_TOKEN` | Token de acceso personal de la cuenta de Calendly que será dueña de la suscripción. Se usa únicamente en el encabezado `Authorization`; no forma parte del JSON. |
+| `url` | URL **pública HTTPS de esta aplicación** en Coolify, seguida de `/webhook/calendly`. Se toma del campo **Domains** de la aplicación desplegada, por ejemplo `https://agente.midominio.com/webhook/calendly`. No usar `localhost`, `127.0.0.1`, una IP/host privado, la URL del panel de Coolify ni dejar `<URL>` literal. Comprobar antes con `curl https://agente.midominio.com/health`. |
+| `events` | Valores fijos: `invitee.created` e `invitee.canceled`. Son los dos eventos que confirma o cancela una cita en esta aplicación. |
+| `organization` | La URI canónica de la organización: `resource.current_organization` de `GET /users/me`. Tiene forma `https://api.calendly.com/organizations/<uuid>`. |
+| `user` | La URI canónica del usuario: `resource.uri` de `GET /users/me`. Tiene forma `https://api.calendly.com/users/<uuid>`; no es el enlace público `calendly.com/...`. Aunque el error de Calendly diga `user_uuid`, el campo que se envía se llama `user` y contiene esta URI completa. |
+| `scope` | Valor fijo `user`: limita las entregas a ese usuario de Calendly. |
+| `signing_key` | Secreto propio generado con `openssl rand -hex 32`. Guardarlo sin exponerlo y copiar el mismo valor en `CALENDLY_SIGNING_KEY` de Coolify. |
+
+Primero, obtener las URIs de la cuenta:
 
 ```bash
 curl -s https://api.calendly.com/users/me -H "Authorization: Bearer $CALENDLY_TOKEN"
@@ -49,7 +62,7 @@ respuesta:
 openssl rand -hex 32
 ```
 
-Crear la suscripción (sustituir los tres valores):
+Crear la suscripción sustituyendo los valores de la tabla:
 
 ```bash
 curl -s -X POST https://api.calendly.com/webhook_subscriptions -H "Authorization: Bearer $CALENDLY_TOKEN" -H "Content-Type: application/json" -d '{"url":"https://<URL>/webhook/calendly","events":["invitee.created","invitee.canceled"],"organization":"<ORGANIZATION_URI>","user":"<USER_URI>","scope":"user","signing_key":"<LLAVE_GENERADA>"}'

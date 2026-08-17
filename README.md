@@ -32,7 +32,7 @@ placeholder.
 Two one-time **operator steps, never agent ones**: a human runs
 `kapso whatsapp webhooks new` against the live account to point WhatsApp at the deployed
 URL, and a human registers the Calendly subscription for `invitee.created` /
-`invitee.canceled` at `/webhook/calendly`, putting the signing key Calendly returns into
-`CALENDLY_SIGNING_KEY`. Until that key is set the route rejects every delivery, so no
+`invitee.canceled` at `/webhook/calendly`, generating a signing key and putting that same
+value into `CALENDLY_SIGNING_KEY` (see `RUNBOOK.md`). Until that key is set the route rejects every delivery, so no
 appointment is ever confirmed. Do not point the live
 Kapso webhook at this service until an operator has completed the final controlled test.
