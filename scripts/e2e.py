@@ -1,6 +1,6 @@
 """Local end-to-end harness: drive the running service like production does.
 
-Runs **inside the container** (see `docker compose exec` in the README section
+Runs **inside the container** (see `docker compose exec` in the RUNBOOK section
 of this file's `--help`), because that is where the SQLite file and the service
 both live. It speaks to the app over HTTP exactly the way Kapso and Calendly do
 — same signatures, same payload shapes — so a green run here means the wiring

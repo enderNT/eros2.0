@@ -175,21 +175,14 @@ guessing whether a fact exists.)
 - **Secrets** come from the environment through `pydantic-settings`, and every new setting
   is mirrored in `.env.example`. Never inline a key, an ID or a URL.
 - **Kapso is production.** The linked account owns live WhatsApp numbers. Mutating Kapso
-  commands and real message sends are operator actions, never agent actions. See
-  `.qwen/skills/kapso-platform/SKILL.md`.
+  commands and real message sends are operator actions, never agent actions. Follow
+  `RUNBOOK.md` for the operator sequence.
 - **Time is a known trap.** Calendly availability, timezones and slot boundaries caused
   real bugs in v2. Anything touching dates carries explicit timezone handling and tests
   with fixed clocks.
 - **Outbound sends are not idempotent.** A retry can double-message a patient. Deduplicate
   on a message key instead of retrying blindly.
 - **Every behavior change ships with a test.** No network in tests.
-
-## Who does what
-
-- `CLAUDE.md` — how Claude Code operates here: plans, specs, reviews, delegates.
-- `QWEN.md` — the implementation contract for `qwen`: discovery protocol, skills, house
-  rules, output format.
-- `.qwen/skills/` — skills available to the implementer.
 
 ## Open questions
 
