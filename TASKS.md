@@ -203,7 +203,9 @@ retry blindly.
 
 Acceptance: `pytest -q` green; the pipeline is exercised end to end with no network.
 
-## [ ] T7 — Knowledge: playbook and wiki
+## [x] T7 — Knowledge: playbook and wiki
+
+→ result: clinic-safe placeholder content plus deterministic section loader, TOC and lookup live.
 
 Needs T1. §5, §6.
 
