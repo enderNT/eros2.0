@@ -1,56 +1,38 @@
-"""Mobile-first local control panel (SPEC §3, §11)."""
+"""Control panel shell: serves the built React app and its assets (SPEC §3).
+
+The panel is a Vite/React SPA; every read and write it performs goes through
+`panel_api`. This module only hands the browser the shell and the compiled
+bundle, so it is deliberately session-free — the shell carries no patient
+data, and the API refuses to answer without a cookie.
+"""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import parse_qs
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
-from ..adapters.store.appointments import SqliteAppointmentsRepository
-from ..adapters.store.mutes import SqliteMutesRepository
-from ..adapters.store.purge import SqlitePurgeRepository
-from ..adapters.store.settings import (
-    MAX_APPOINTMENT_REMINDER_MINUTES,
-    MAX_BOOKING_FOLLOWUP_MINUTES,
-    MIN_APPOINTMENT_REMINDER_MINUTES,
-    MIN_BOOKING_FOLLOWUP_MINUTES,
-    SqliteRuntimeSettingsRepository,
-)
-from ..adapters.store.traces import SqliteTracesRepository
-from ..domain.contacts import ContactKey, mask_phone
-from ..domain.errors import KapsoError
 from ..ports.channel import ConversationRow
-from .auth import panel_actor, require_panel_session, set_session
 
 router = APIRouter()
 _ROOT = Path(__file__).parent
-templates = Jinja2Templates(directory=str(_ROOT / "templates"))
-templates.env.globals["mask_phone"] = mask_phone
-_SLIDER_STEPS = (1, 2, 3, 5, 6, 9, 10, 15, 18, 30, 45, 90)
+_STATIC = _ROOT / "static"
+_SHELL = _STATIC / "panel" / "index.html"
+
+_NOT_BUILT = """<!doctype html><html lang="es"><meta charset="utf-8">
+<title>Panel sin compilar</title>
+<body style="font:16px system-ui;padding:24px">
+<h1>El panel no está compilado</h1>
+<p>Ejecuta <code>npm --prefix panel-ui install &amp;&amp; npm --prefix panel-ui run build</code>
+y recarga.</p>"""
 
 
 def mount_static(app) -> None:  # type: ignore[no-untyped-def]
-    app.mount("/admin/static", StaticFiles(directory=str(_ROOT / "static")), name="admin-static")
-
-
-async def _form(request: Request) -> dict[str, str]:
-    data = parse_qs((await request.body()).decode(), keep_blank_values=True)
-    return {key: values[-1] for key, values in data.items()}
-
-
-def _until(value: str, now: datetime) -> datetime | None:
-    if not value:
-        return None
-    try:
-        seconds = int(value)
-    except ValueError:
-        return None
-    return now + timedelta(seconds=seconds) if seconds > 0 else None
+    _STATIC.mkdir(parents=True, exist_ok=True)
+    app.mount("/admin/static", StaticFiles(directory=str(_STATIC)), name="admin-static")
 
 
 def one_row_per_contact(
@@ -80,281 +62,10 @@ def _activity(row: ConversationRow) -> datetime:
     return row.last_activity_at or datetime.min.replace(tzinfo=UTC)
 
 
-def _mutes(request: Request) -> SqliteMutesRepository:
-    return SqliteMutesRepository(request.app.state.db)
-
-
-def _runtime_settings(request: Request) -> SqliteRuntimeSettingsRepository:
-    return SqliteRuntimeSettingsRepository(request.app.state.db)
-
-
-def _booking_followup_minutes(request: Request) -> int:
-    return _runtime_settings(request).booking_followup_minutes(
-        request.app.state.settings.booking_followup_minutes
-    )
-
-
-def _appointment_reminder_minutes(request: Request) -> int:
-    return _runtime_settings(request).appointment_reminder_minutes(
-        request.app.state.settings.appointment_reminder_minutes
-    )
-
-
-def _slider_step(value: str) -> int:
-    try:
-        step = int(value)
-    except ValueError:
-        return 1
-    return step if step in _SLIDER_STEPS else 1
-
-
-def _minute_label(minutes: int) -> str:
-    if minutes % 1440 == 0:
-        days = minutes // 1440
-        return f"{days} día" if days == 1 else f"{days} días"
-    if minutes % 60 == 0:
-        hours = minutes // 60
-        return f"{hours} hora" if hours == 1 else f"{hours} horas"
-    return f"{minutes} min"
-
-
+@router.get("/admin", response_class=HTMLResponse)
 @router.get("/admin/login", response_class=HTMLResponse)
-async def login_page(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse(request, "login_fragment.html", {"error": None})
-
-
-@router.post("/admin/login", response_class=HTMLResponse)
-async def login(request: Request) -> HTMLResponse:
-    form = await _form(request)
-    if form.get("password") != request.app.state.settings.panel_password:
-        return templates.TemplateResponse(
-            request, "login_fragment.html", {"error": "Contraseña inválida"}, status_code=401
-        )
-    response = RedirectResponse("/admin", status_code=303)
-    set_session(response, request.app.state.settings.panel_session_secret)
-    return response
-
-
-@router.get("/admin", response_class=HTMLResponse, dependencies=[Depends(require_panel_session)])
-async def panel(request: Request) -> HTMLResponse:
-    error = None
-    try:
-        conversations = (
-            await request.app.state.channel.list_conversations(
-                request.app.state.settings.kapso_phone_number_id
-            )
-        ).conversations
-    except KapsoError:
-        conversations, error = [], "No se pudieron cargar las conversaciones."
-    conversations, conversation_counts = one_row_per_contact(conversations)
-    mutes = _mutes(request)
-    states = {
-        row.contact_phone: mutes.contact_mute(
-            ContactKey(request.app.state.settings.kapso_phone_number_id, row.contact_phone)
-        )
-        for row in conversations
-        if row.contact_phone
-    }
-    appointments = SqliteAppointmentsRepository(request.app.state.db)
-    appointment_states = {}
-    for row in conversations:
-        if not row.contact_phone:
-            continue
-        key = ContactKey(request.app.state.settings.kapso_phone_number_id, row.contact_phone)
-        appointment_states[row.contact_phone] = next(
-            (item for item in appointments.for_contact(key) if item.status == "scheduled"), None
-        )
-    return templates.TemplateResponse(
-        request,
-        "contact_list.html",
-        {
-            "conversations": conversations,
-            "conversation_counts": conversation_counts,
-            "mute_states": states,
-            "global_muted": mutes.global_mute() is not None,
-            "number_muted": mutes.number_mute(request.app.state.settings.kapso_phone_number_id)
-            is not None,
-            "booking_followup_minutes": _booking_followup_minutes(request),
-            "booking_followup_slider_step": 1,
-            "booking_followup_steps": _SLIDER_STEPS,
-            "booking_followup_step_count": MAX_BOOKING_FOLLOWUP_MINUTES,
-            "appointment_reminder_minutes": _appointment_reminder_minutes(request),
-            "appointment_reminder_min": MIN_APPOINTMENT_REMINDER_MINUTES,
-            "appointment_reminder_max": MAX_APPOINTMENT_REMINDER_MINUTES,
-            "minute_label": _minute_label,
-            "appointment_states": appointment_states,
-            "error": error,
-        },
-    )
-
-
-@router.post(
-    "/admin/mute", response_class=HTMLResponse, dependencies=[Depends(require_panel_session)]
-)
-async def contact_mute(request: Request) -> HTMLResponse:
-    form, now = await _form(request), datetime.now(UTC)
-    key = ContactKey(form["phone_number_id"], form["contact_phone"])
-    repo = _mutes(request)
-    muted = form.get("muted") == "true"
-    if muted:
-        repo.set_mute(
-            key,
-            now,
-            actor=panel_actor(),
-            reason="panel",
-            until=_until(form.get("expires_in", ""), now),
-        )
-    else:
-        repo.clear_mute(key, now, actor=panel_actor(), reason="panel")
-    return templates.TemplateResponse(
-        request,
-        "contact_mute_toggle.html",
-        {"key": key, "mute_state": repo.contact_mute(key)},
-    )
-
-
-@router.post(
-    "/admin/reset", response_class=HTMLResponse, dependencies=[Depends(require_panel_session)]
-)
-async def contact_reset(request: Request) -> HTMLResponse:
-    """Erase everything stored about one contact. Irreversible, and audited."""
-    form, now = await _form(request), datetime.now(UTC)
-    key = ContactKey(form["phone_number_id"], form["contact_phone"])
-    removed = SqlitePurgeRepository(request.app.state.db).contact(
-        key, now, actor=panel_actor(), reason="panel"
-    )
-    return templates.TemplateResponse(
-        request,
-        "contact_controls.html",
-        # The purge cleared the mute too, so the toggle below it is redrawn
-        # from the store rather than assumed.
-        {
-            "key": key,
-            "mute_state": _mutes(request).contact_mute(key),
-            "purged": sum(removed.values()),
-        },
-    )
-
-
-@router.post(
-    "/admin/number-mute", response_class=HTMLResponse, dependencies=[Depends(require_panel_session)]
-)
-async def number_mute(request: Request) -> HTMLResponse:
-    form, now = await _form(request), datetime.now(UTC)
-    muted = form.get("muted") == "true"
-    _mutes(request).set_number_mute(
-        form["phone_number_id"],
-        muted,
-        now,
-        actor=panel_actor(),
-        reason="panel",
-        until=_until(form.get("expires_in", ""), now),
-    )
-    return templates.TemplateResponse(
-        request,
-        "number_mute_toggle.html",
-        {"phone_number_id": form["phone_number_id"], "number_muted": muted},
-    )
-
-
-@router.post(
-    "/admin/global", response_class=HTMLResponse, dependencies=[Depends(require_panel_session)]
-)
-async def global_mute(request: Request) -> HTMLResponse:
-    form, now = await _form(request), datetime.now(UTC)
-    muted = form.get("muted") == "true"
-    _mutes(request).set_global(
-        muted,
-        now,
-        actor=panel_actor(),
-        reason="panel",
-        until=_until(form.get("expires_in", ""), now),
-    )
-    return templates.TemplateResponse(request, "global_kill_switch.html", {"global_muted": muted})
-
-
-@router.post(
-    "/admin/booking-followup",
-    response_class=HTMLResponse,
-    dependencies=[Depends(require_panel_session)],
-)
-async def booking_followup(request: Request) -> HTMLResponse:
-    form = await _form(request)
-    try:
-        minutes = int(form.get("minutes", ""))
-        _runtime_settings(request).set_booking_followup_minutes(minutes, datetime.now(UTC))
-    except ValueError:
-        minutes = _booking_followup_minutes(request)
-    slider_step = _slider_step(form.get("slider_step", "1"))
-    return templates.TemplateResponse(
-        request,
-        "booking_followup_control.html",
-        {
-            "booking_followup_minutes": minutes,
-            "booking_followup_min": MIN_BOOKING_FOLLOWUP_MINUTES,
-            "booking_followup_max": MAX_BOOKING_FOLLOWUP_MINUTES,
-            "booking_followup_slider_step": slider_step,
-            "booking_followup_steps": _SLIDER_STEPS,
-            "booking_followup_step_count": MAX_BOOKING_FOLLOWUP_MINUTES // slider_step,
-        },
-    )
-
-
-@router.post(
-    "/admin/appointment-reminder-settings",
-    response_class=HTMLResponse,
-    dependencies=[Depends(require_panel_session)],
-)
-async def appointment_reminder_settings(request: Request) -> HTMLResponse:
-    form, now = await _form(request), datetime.now(UTC)
-    try:
-        minutes = int(form.get("minutes", ""))
-        _runtime_settings(request).set_appointment_reminder_minutes(minutes, now)
-        request.app.state.appointment_reminders.reschedule_pending(now)
-    except ValueError:
-        minutes = _appointment_reminder_minutes(request)
-    return templates.TemplateResponse(
-        request,
-        "appointment_reminder_settings.html",
-        {
-            "appointment_reminder_minutes": minutes,
-            "appointment_reminder_min": MIN_APPOINTMENT_REMINDER_MINUTES,
-            "appointment_reminder_max": MAX_APPOINTMENT_REMINDER_MINUTES,
-            "minute_label": _minute_label,
-        },
-    )
-
-
-@router.post(
-    "/admin/appointment-reminder",
-    response_class=HTMLResponse,
-    dependencies=[Depends(require_panel_session)],
-)
-async def appointment_reminder(request: Request) -> HTMLResponse:
-    form = await _form(request)
-    key = ContactKey(form["phone_number_id"], form["contact_phone"])
-    result = await request.app.state.appointment_reminders.send_now(key)
-    appointment = next(
-        (
-            item
-            for item in SqliteAppointmentsRepository(request.app.state.db).for_contact(key)
-            if item.status == "scheduled"
-        ),
-        None,
-    )
-    return templates.TemplateResponse(
-        request,
-        "appointment_reminder_trigger.html",
-        {"key": key, "appointment": appointment, "reminder_result": result},
-    )
-
-
-@router.get(
-    "/admin/traces", response_class=HTMLResponse, dependencies=[Depends(require_panel_session)]
-)
-async def traces(request: Request) -> HTMLResponse:
-    try:
-        rows = SqliteTracesRepository(request.app.state.db).recent()
-    except NotImplementedError:
-        rows = []
-    return templates.TemplateResponse(request, "traces_view.html", {"traces": rows, "error": None})
+@router.get("/admin/traces", response_class=HTMLResponse)
+async def shell() -> HTMLResponse:
+    if not _SHELL.is_file():
+        return HTMLResponse(_NOT_BUILT, status_code=503)
+    return HTMLResponse(_SHELL.read_text(encoding="utf-8"))

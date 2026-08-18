@@ -47,6 +47,7 @@ from .tools.registry import build_tools
 from .web.health import router as health_router
 from .web.panel import mount_static
 from .web.panel import router as panel_router
+from .web.panel_api import router as panel_api_router
 from .web.webhooks import router as webhooks_router
 
 if TYPE_CHECKING:
@@ -216,6 +217,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(panel_router)
+    app.include_router(panel_api_router)
     app.include_router(webhooks_router)
     mount_static(app)
     return app

@@ -49,7 +49,7 @@ a product surface — humans still *reply* from the Kapso Inbox.
 | LLM | Anthropic SDK (`anthropic`) |
 | HTTP client | `httpx` |
 | Persistence | **SQLite** (WAL), one file on a Coolify volume — no database service |
-| Control panel | Server-rendered Jinja2 + HTMX inside the same FastAPI app — no build step |
+| Control panel | Vite + React (TypeScript) SPA in `panel-ui/`, compiled into the FastAPI app |
 | Config | `pydantic-settings`, environment only |
 | Tests | `pytest` |
 | Messaging channel | **Kapso** (WhatsApp Business) — transport *and* human inbox |
@@ -123,8 +123,11 @@ exists to remove. Consequence accepted: someone has to look at the panel.
   truth for message history.
 - Joins each row with the local mute state and shows a toggle per contact, plus the global
   kill switch.
-- Server-rendered Jinja2 + HTMX. No SPA, no build step, no second deployment, no CORS. The
-  point of this panel is to *remove* friction, so it ships inside the existing container.
+- **A Vite/React SPA, served by the same container.** The panel started as server-rendered
+  Jinja2 + HTMX; it is a React app now. What that decision bought is kept: the bundle is
+  built into `agente/web/static/panel` and served by FastAPI, so there is still no second
+  deployment, no CORS and no separate origin — the cost is a Node build step in the image.
+  Everything the panel reads or writes goes through the JSON API under `/admin/api`.
 - **Mobile first, not merely responsive.** The real moment of use is the psychologist on
   their phone, noticing a conversation that needs a human and muting the bot in two taps.
   Design that screen first; the desktop layout is the afterthought, not the reverse.

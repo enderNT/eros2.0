@@ -9,6 +9,9 @@ data/
 .DS_Store
 dist/
 build/
+node_modules/
+# Built control panel: produced by `npm --prefix panel-ui run build`.
+src/agente/web/static/panel/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/

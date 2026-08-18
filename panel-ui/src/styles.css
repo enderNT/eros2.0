@@ -3,7 +3,12 @@ body { margin: 0; font: 16px system-ui, sans-serif; background: #f7f7f7; color: 
 .page { max-width: 760px; margin: auto; padding: 16px; }
 header { margin-bottom: 16px; } h1 { font-size: 1.4rem; }
 .card, .form-action, table { background: white; border-radius: 10px; padding: 14px; margin: 12px 0; width: 100%; }
-form { display: grid; gap: 10px; } input, select, button { min-height: 44px; font: inherit; }
+.form-action > label { justify-self: start; }
+.form-action > button, .form-action > select { justify-self: stretch; }
+/* Controls used to live inside a <form>; the React port dropped the form but
+   keeps its stacked layout — on a phone a button must never share a line
+   with the label it belongs to. */
+form, .form-action { display: grid; gap: 10px; } input, select, button { min-height: 44px; font: inherit; }
 button { border: 0; border-radius: 8px; padding: 8px 14px; background: #155eef; color: white; }
 button.secondary { background: #e4e7ec; color: #344054; }
 table { border-collapse: collapse; } th, td { text-align: left; padding: 10px 4px; vertical-align: top; border-bottom: 1px solid #ddd; }
@@ -42,3 +47,11 @@ button.danger { background: #b42318; }
   font-weight: 400; font-style: normal; line-height: 1.35; }
 @media (max-width: 420px) { th:nth-child(3), td:nth-child(3) { display: none; }
   .hint p { max-width: calc(100vw - 48px); } }
+/* React port: the contact block that used to be a second <tr> spanning the
+   whole row. Same visual weight, no table-layout tricks. */
+.contact-controls { display: grid; gap: 8px; }
+.contact-row td { border-bottom: 0; }
+.contact-controls-row td { padding-top: 0; }
+.nav { display: flex; gap: 12px; align-items: baseline; margin-bottom: 12px; }
+.nav a { color: #155eef; }
+.loading { color: #667085; padding: 16px; }

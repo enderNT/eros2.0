@@ -13,7 +13,6 @@ dependencies = [
     "uvicorn[standard]",
     "pydantic-settings",
     "httpx",
-    "jinja2",
 ]
 
 [project.optional-dependencies]
@@ -26,8 +25,8 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agente"]
+# The panel bundle is built by `panel-ui` into web/static/panel before packaging.
 include = [
-  "src/agente/web/templates/**",
   "src/agente/web/static/**",
 ]
 

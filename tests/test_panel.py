@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
+from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from agente.adapters.store.messages import SqliteMessagesRepository
@@ -8,6 +10,13 @@ from agente.adapters.store.settings import SqliteRuntimeSettingsRepository
 from agente.app import create_app
 from agente.domain.contacts import ContactKey, mask_phone
 from agente.ports.channel import ConversationList, ConversationRow
+
+CONTACT = "+12052943796"
+
+# The shell is a build artifact: skip rather than fail when the panel has not
+# been compiled, so `pytest` on a fresh clone reports the reason instead of a
+# missing file.
+_SHELL = Path(__file__).resolve().parents[1] / "src/agente/web/static/panel/index.html"
 
 
 class FakeChannel:
@@ -20,7 +29,7 @@ class FakeChannel:
                 ConversationRow(
                     "conversation-1",
                     "Paciente",
-                    "+12052943796",
+                    CONTACT,
                     "Hola",
                     datetime(2026, 8, 16, tzinfo=UTC),
                     "active",
@@ -31,120 +40,128 @@ class FakeChannel:
 
 
 def _login(client: TestClient) -> None:
-    response = client.post(
-        "/admin/login", data={"password": "panel-password-test"}, follow_redirects=False
-    )
-    assert response.status_code == 303
-
-
-def test_admin_requires_session_and_serves_local_htmx(settings):
-    with TestClient(create_app(settings)) as client:
-        assert client.get("/admin").status_code == 401
-        assert client.get("/admin/traces").status_code == 401
-        assert client.post("/admin/global", data={"muted": "true"}).status_code == 401
-        response = client.get("/admin/static/htmx.min.js")
+    response = client.post("/admin/api/login", json={"password": "panel-password-test"})
     assert response.status_code == 200
-    assert len(response.text) > 1000
+    assert response.json() == {"authed": True}
 
 
-def test_panel_renders_live_fake_and_contact_mute_round_trip(settings):
+def _key(settings) -> dict[str, str]:
+    return {"phone_number_id": settings.kapso_phone_number_id, "contact_phone": CONTACT}
+
+
+def test_api_requires_a_session(settings):
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/admin/api/state").status_code == 401
+        assert client.get("/admin/api/traces").status_code == 401
+        assert client.post("/admin/api/global", json={"muted": True}).status_code == 401
+        # The session probe is the one anonymous route: the SPA asks it to
+        # decide whether to draw the login form.
+        assert client.get("/admin/api/session").json() == {"authed": False}
+
+
+@pytest.mark.skipif(not _SHELL.is_file(), reason="run `npm --prefix panel-ui run build`")
+def test_the_shell_is_served_without_a_session_and_carries_no_data(settings):
+    """The SPA shell has no patient data in it, so it is not behind the cookie."""
+    with TestClient(create_app(settings)) as client:
+        response = client.get("/admin")
+        traces = client.get("/admin/traces")
+    assert response.status_code == 200
+    assert traces.status_code == 200
+    assert "/admin/static/panel/assets/" in response.text
+    assert CONTACT not in response.text
+
+
+def test_a_wrong_password_is_rejected(settings):
+    with TestClient(create_app(settings)) as client:
+        assert client.post("/admin/api/login", json={"password": "nope"}).status_code == 401
+        assert client.get("/admin/api/state").status_code == 401
+
+
+def test_state_lists_one_row_per_contact_with_a_masked_phone(settings):
     with TestClient(create_app(settings)) as client:
         client.app.state.channel = FakeChannel()
         _login(client)
-        page = client.get("/admin")
-        assert page.status_code == 200
-        assert "Paciente" in page.text
-        assert mask_phone("+12052943796") in page.text
-        assert "Mutar número" in page.text
+        state = client.get("/admin/api/state").json()
 
+    assert state["phone_number_id"] == settings.kapso_phone_number_id
+    assert state["error"] is None
+    assert state["global_muted"] is False
+    assert state["number_muted"] is False
+    assert state["booking_followup"] == {"minutes": 90, "min": 0, "max": 90}
+    assert state["appointment_reminder"] == {"minutes": 1440, "min": 1, "max": 10080}
+    (contact,) = state["contacts"]
+    assert contact["name"] == "Paciente"
+    assert contact["masked_phone"] == mask_phone(CONTACT)
+    # The raw phone still travels: the mute key is built from it.
+    assert contact["phone"] == CONTACT
+    assert contact["mute"] is None
+    assert contact["appointment"] is None
+
+
+def test_contact_mute_round_trip(settings):
+    with TestClient(create_app(settings)) as client:
+        client.app.state.channel = FakeChannel()
+        _login(client)
         response = client.post(
-            "/admin/mute",
-            data={
-                "phone_number_id": settings.kapso_phone_number_id,
-                "contact_phone": "+12052943796",
-                "muted": "true",
-                "expires_in": "3600",
-            },
+            "/admin/api/mute", json={**_key(settings), "muted": True, "expires_in": 3600}
         )
         assert response.status_code == 200
-        assert "Activar bot" in response.text
-        assert "hasta" in response.text
+        assert response.json()["mute"]["muted_until"] is not None
+
         mutes = SqliteMutesRepository(client.app.state.db)
-        key = ContactKey(settings.kapso_phone_number_id, "+12052943796")
+        key = ContactKey(settings.kapso_phone_number_id, CONTACT)
         assert mutes.is_bot_muted(key, datetime.now(UTC))
         assert mutes.audit_trail()[0].action == "contact_muted"
+
+        cleared = client.post("/admin/api/mute", json={**_key(settings), "muted": False})
+        assert cleared.json() == {"mute": None}
+        assert not mutes.is_bot_muted(key, datetime.now(UTC))
 
 
 def test_number_and_global_mutes_round_trip(settings):
     with TestClient(create_app(settings)) as client:
         _login(client)
         number = client.post(
-            "/admin/number-mute",
-            data={"phone_number_id": settings.kapso_phone_number_id, "muted": "true"},
+            "/admin/api/number-mute",
+            json={"phone_number_id": settings.kapso_phone_number_id, "muted": True},
         )
-        global_response = client.post("/admin/global", data={"muted": "true"})
-        assert "Desmutar número" in number.text
-        assert "El bot está apagado para todos." in global_response.text
+        global_response = client.post("/admin/api/global", json={"muted": True})
+        assert number.json() == {"number_muted": True}
+        assert global_response.json() == {"global_muted": True}
+
+        mutes = SqliteMutesRepository(client.app.state.db)
+        assert mutes.global_mute() is not None
+        assert mutes.number_mute(settings.kapso_phone_number_id) is not None
 
 
-def test_booking_followup_control_round_trip(settings):
+def test_booking_followup_saves_and_refuses_out_of_range(settings):
     with TestClient(create_app(settings)) as client:
         _login(client)
-        page = client.get("/admin")
-        assert 'type="range"' in page.text
-        assert 'min="0"' in page.text
-        assert 'max="90"' in page.text
-        assert '<select id="booking-followup-stepper"' in page.text
-        assert 'id="global-change-dialog"' in page.text
-        assert 'class="global-save" type="button"' in page.text
-        assert 'onclick="openGlobalChange(this.form)"' in page.text
-        assert "htmx.ajax('POST', form.getAttribute('hx-post')" in page.text
-        response = client.post(
-            "/admin/booking-followup", data={"minutes": "10", "slider_step": "5"}
-        )
-        assert response.status_code == 200
-        assert 'step="5"' in response.text
-        assert "18 pasos de 5 min" in response.text
+        assert client.post("/admin/api/booking-followup", json={"minutes": 10}).json() == {
+            "minutes": 10
+        }
         runtime = SqliteRuntimeSettingsRepository(client.app.state.db)
         assert runtime.booking_followup_minutes(default=90) == 10
 
-        invalid = client.post("/admin/booking-followup", data={"minutes": "91"})
-        assert 'value="10"' in invalid.text
+        assert client.post("/admin/api/booking-followup", json={"minutes": 91}).status_code == 422
+        assert runtime.booking_followup_minutes(default=90) == 10
 
 
-def test_appointment_reminder_control_is_global_and_supports_one_minute_testing(settings):
+def test_appointment_reminder_setting_saves_and_refuses_out_of_range(settings):
     with TestClient(create_app(settings)) as client:
         _login(client)
-        page = client.get("/admin")
-        assert "Recordatorio de cita" in page.text
-        assert 'id="appointment-reminder-minutes"' in page.text
-        assert 'type="number"' in page.text
-        assert 'min="1"' in page.text
-        assert 'max="10080"' in page.text
-        response = client.post(
-            "/admin/appointment-reminder-settings", data={"minutes": "2"}
-        )
-        assert response.status_code == 200
-        assert 'value="2"' in response.text
+        assert client.post(
+            "/admin/api/appointment-reminder-settings", json={"minutes": 2}
+        ).json() == {"minutes": 2}
         runtime = SqliteRuntimeSettingsRepository(client.app.state.db)
         assert runtime.appointment_reminder_minutes(default=1440) == 2
-        assert "Tiempos sugeridos" in page.text
-        assert "El slider" not in page.text
 
-
-def test_global_changes_save_explicitly_after_modal_confirmation(settings):
-    with TestClient(create_app(settings)) as client:
-        _login(client)
-        page = client.get("/admin")
-    assert 'type="button" onclick="openGlobalChange(this.form)"' in page.text
-    assert "htmx.ajax('POST', form.getAttribute('hx-post')" in page.text
-    assert "form.reportValidity()" in page.text
+        too_long = client.post("/admin/api/appointment-reminder-settings", json={"minutes": 10081})
+        assert too_long.status_code == 422
+        assert runtime.appointment_reminder_minutes(default=1440) == 2
 
 
 def test_one_row_per_contact_keeps_the_most_recent_conversation():
-    from datetime import UTC, datetime
-
-    from agente.ports.channel import ConversationRow
     from agente.web.panel import one_row_per_contact
 
     def row(conv_id, phone, day, status="ended"):
@@ -170,7 +187,6 @@ def test_one_row_per_contact_keeps_the_most_recent_conversation():
 
 
 def test_conversations_without_a_phone_are_not_merged_together():
-    from agente.ports.channel import ConversationRow
     from agente.web.panel import one_row_per_contact
 
     anonymous = [
@@ -182,18 +198,31 @@ def test_conversations_without_a_phone_are_not_merged_together():
     assert counts == {"c1": 1, "c2": 1}
 
 
+def test_a_contact_without_a_phone_gets_no_switches(settings):
+    """No phone means no mute key, so the row carries no contact state."""
+
+    class AnonymousChannel(FakeChannel):
+        async def list_conversations(self, *_args, **_kwargs) -> ConversationList:
+            return ConversationList([ConversationRow("c1", None, None, None, None, "ended")], None)
+
+    with TestClient(create_app(settings)) as client:
+        client.app.state.channel = AnonymousChannel()
+        _login(client)
+        (contact,) = client.get("/admin/api/state").json()["contacts"]
+    assert contact["phone"] is None
+    assert contact["masked_phone"] is None
+    assert contact["mute"] is None
+
+
 def test_reset_requires_a_session(settings):
     with TestClient(create_app(settings)) as client:
-        response = client.post(
-            "/admin/reset",
-            data={"phone_number_id": "1087343774471931", "contact_phone": "+12052943796"},
-        )
+        response = client.post("/admin/api/reset", json=_key(settings))
     assert response.status_code == 401
 
 
 def test_reset_erases_the_contact_and_audits_it(settings):
     """Everything about the contact goes, in one transaction, with a trail."""
-    key = ContactKey("1087343774471931", "+12052943796")
+    key = ContactKey(settings.kapso_phone_number_id, CONTACT)
     now = datetime(2026, 8, 16, 12, tzinfo=UTC)
     app = create_app(settings)
     with TestClient(app) as client:
@@ -204,11 +233,10 @@ def test_reset_erases_the_contact_and_audits_it(settings):
         app.state.channel = FakeChannel()
         _login(client)
 
-        response = client.post(
-            "/admin/reset",
-            data={"phone_number_id": key.phone_number_id, "contact_phone": key.contact_phone},
-        )
+        response = client.post("/admin/api/reset", json=_key(settings))
         assert response.status_code == 200
+        assert response.json()["purged"] > 0
+        assert response.json()["mute"] is None
         assert messages.window(key, 10) == []
         mutes = SqliteMutesRepository(app.state.db)
         assert mutes.contact_mute(key) is None
@@ -216,24 +244,27 @@ def test_reset_erases_the_contact_and_audits_it(settings):
 
 
 def test_reset_on_a_contact_with_nothing_stored_is_harmless(settings):
-    key = ContactKey("1087343774471931", "+12052943796")
     app = create_app(settings)
     with TestClient(app) as client:
         app.state.channel = FakeChannel()
         _login(client)
-        response = client.post(
-            "/admin/reset",
-            data={"phone_number_id": key.phone_number_id, "contact_phone": key.contact_phone},
-        )
+        response = client.post("/admin/api/reset", json=_key(settings))
     assert response.status_code == 200
-    assert "No había nada guardado" in response.text
+    assert response.json()["purged"] == 0
 
 
-def test_the_contact_row_offers_the_reset_button(settings):
-    app = create_app(settings)
-    with TestClient(app) as client:
-        app.state.channel = FakeChannel()
+def test_traces_are_listed_for_a_session(settings):
+    with TestClient(create_app(settings)) as client:
         _login(client)
-        body = client.get("/admin").text
-    assert "/admin/reset" in body
-    assert "hx-confirm" in body
+        response = client.get("/admin/api/traces")
+    assert response.status_code == 200
+    assert response.json() == {"traces": []}
+
+
+def test_logout_drops_the_session(settings):
+    with TestClient(create_app(settings)) as client:
+        _login(client)
+        assert client.get("/admin/api/session").json() == {"authed": True}
+        client.post("/admin/api/logout")
+        assert client.get("/admin/api/session").json() == {"authed": False}
+        assert client.get("/admin/api/state").status_code == 401

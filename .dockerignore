@@ -1,0 +1,14 @@
+# Node artifacts are rebuilt inside the image; copying them in breaks the build
+# and bloats the context.
+node_modules/
+panel-ui/node_modules/
+src/agente/web/static/panel/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.git/
+data/
+.env
