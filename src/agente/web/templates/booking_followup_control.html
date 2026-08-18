@@ -4,8 +4,8 @@
     {{ hint("Si el paciente recibe un enlace de agenda y no responde ni confirma la cita, el bot pregunta una sola vez después de este lapso. El ajuste es global y aplica a los enlaces nuevos.") }}
   </label>
   <p class="subtle">Esperar <output id="booking-followup-value">{{ booking_followup_minutes }}</output> min antes de preguntar.</p>
-  <form id="booking-followup-form" hx-post="/admin/booking-followup" hx-target="#booking-followup" hx-swap="outerHTML"
-    data-saved-minutes="{{ booking_followup_minutes }}" onsubmit="return confirmGlobalChange(this)">
+  <form id="booking-followup-form" hx-post="/admin/booking-followup"
+    hx-target="closest .form-action" hx-swap="outerHTML" data-saved-minutes="{{ booking_followup_minutes }}">
     <div class="range-row">
       <div class="range-slider">
         <output class="slider-step-count" id="booking-followup-step-count">{{ booking_followup_step_count }} pasos de {{ booking_followup_slider_step }} min</output>
@@ -24,7 +24,7 @@
       </select>
       </label>
     </div>
-    <button class="global-save" type="submit" hidden>Guardar cambio global</button>
+    <button class="global-save" type="button" onclick="openGlobalChange(this.form)" hidden>Guardar cambio global</button>
   </form>
   <p class="subtle">El paso sólo cambia cuánto avanza el slider; no cambia el tiempo programado.</p>
 </div>

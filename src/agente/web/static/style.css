@@ -7,6 +7,7 @@ form { display: grid; gap: 10px; } input, select, button { min-height: 44px; fon
 button { border: 0; border-radius: 8px; padding: 8px 14px; background: #155eef; color: white; }
 button.secondary { background: #e4e7ec; color: #344054; }
 table { border-collapse: collapse; } th, td { text-align: left; padding: 10px 4px; vertical-align: top; border-bottom: 1px solid #ddd; }
+.save-error { margin: 0; padding: 12px 16px; background: #b42318; color: #fff; text-align: center; }
 .error { color: #b42318; }.badge { font-size: .85rem; }.muted { color: #b42318; }
 /* Destructive and irreversible: it should not look like the other buttons. */
 button.danger { background: #b42318; }
@@ -18,6 +19,10 @@ button.danger { background: #b42318; }
 .slider-stepper { display: grid; gap: 2px; color: #667085; font-size: .85rem; }
 .range-row select { width: 88px; }
 .slider-bounds { display: flex; justify-content: space-between; color: #667085; font-size: .75rem; }
+.reminder-presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.reminder-presets button { flex: 1 0 72px; }
+.reminder-minutes { display: grid; gap: 4px; color: #667085; font-size: .85rem; }
+.reminder-minutes input { max-width: 180px; }
 .toggle-row { display: flex; align-items: center; gap: 10px; }
 .toggle-row input { width: 22px; min-height: 22px; }
 .confirm-dialog { max-width: min(420px, calc(100vw - 32px)); border: 0; border-radius: 12px; padding: 0; box-shadow: 0 12px 40px rgb(16 24 40 / .25); }

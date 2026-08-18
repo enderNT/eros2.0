@@ -32,7 +32,6 @@ _ROOT = Path(__file__).parent
 templates = Jinja2Templates(directory=str(_ROOT / "templates"))
 templates.env.globals["mask_phone"] = mask_phone
 _SLIDER_STEPS = (1, 2, 3, 5, 6, 9, 10, 15, 18, 30, 45, 90)
-_REMINDER_SLIDER_STEPS = (1, 2, 5, 10, 15, 30, 60, 120, 360, 720, 1440, 10080)
 
 
 def mount_static(app) -> None:  # type: ignore[no-untyped-def]
@@ -109,14 +108,6 @@ def _slider_step(value: str) -> int:
     return step if step in _SLIDER_STEPS else 1
 
 
-def _reminder_slider_step(value: str) -> int:
-    try:
-        step = int(value)
-    except ValueError:
-        return 1
-    return step if step in _REMINDER_SLIDER_STEPS else 1
-
-
 def _minute_label(minutes: int) -> str:
     if minutes % 1440 == 0:
         days = minutes // 1440
@@ -188,9 +179,6 @@ async def panel(request: Request) -> HTMLResponse:
             "booking_followup_steps": _SLIDER_STEPS,
             "booking_followup_step_count": MAX_BOOKING_FOLLOWUP_MINUTES,
             "appointment_reminder_minutes": _appointment_reminder_minutes(request),
-            "appointment_reminder_slider_step": 1,
-            "appointment_reminder_steps": _REMINDER_SLIDER_STEPS,
-            "appointment_reminder_step_count": MAX_APPOINTMENT_REMINDER_MINUTES,
             "appointment_reminder_min": MIN_APPOINTMENT_REMINDER_MINUTES,
             "appointment_reminder_max": MAX_APPOINTMENT_REMINDER_MINUTES,
             "minute_label": _minute_label,
@@ -325,7 +313,6 @@ async def appointment_reminder_settings(request: Request) -> HTMLResponse:
         request.app.state.appointment_reminders.reschedule_pending(now)
     except ValueError:
         minutes = _appointment_reminder_minutes(request)
-    slider_step = _reminder_slider_step(form.get("slider_step", "1"))
     return templates.TemplateResponse(
         request,
         "appointment_reminder_settings.html",
@@ -333,9 +320,6 @@ async def appointment_reminder_settings(request: Request) -> HTMLResponse:
             "appointment_reminder_minutes": minutes,
             "appointment_reminder_min": MIN_APPOINTMENT_REMINDER_MINUTES,
             "appointment_reminder_max": MAX_APPOINTMENT_REMINDER_MINUTES,
-            "appointment_reminder_slider_step": slider_step,
-            "appointment_reminder_steps": _REMINDER_SLIDER_STEPS,
-            "appointment_reminder_step_count": MAX_APPOINTMENT_REMINDER_MINUTES // slider_step,
             "minute_label": _minute_label,
         },
     )

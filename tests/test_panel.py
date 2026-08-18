@@ -96,8 +96,9 @@ def test_booking_followup_control_round_trip(settings):
         assert 'max="90"' in page.text
         assert '<select id="booking-followup-stepper"' in page.text
         assert 'id="global-change-dialog"' in page.text
-        assert 'class="global-save" type="submit" hidden' in page.text
-        assert 'onsubmit="return confirmGlobalChange(this)"' in page.text
+        assert 'class="global-save" type="button"' in page.text
+        assert 'onclick="openGlobalChange(this.form)"' in page.text
+        assert "htmx.ajax('POST', form.getAttribute('hx-post')" in page.text
         response = client.post(
             "/admin/booking-followup", data={"minutes": "10", "slider_step": "5"}
         )
@@ -116,16 +117,28 @@ def test_appointment_reminder_control_is_global_and_supports_one_minute_testing(
         _login(client)
         page = client.get("/admin")
         assert "Recordatorio de cita" in page.text
-        assert 'id="appointment-reminder-slider"' in page.text
+        assert 'id="appointment-reminder-minutes"' in page.text
+        assert 'type="number"' in page.text
         assert 'min="1"' in page.text
         assert 'max="10080"' in page.text
         response = client.post(
-            "/admin/appointment-reminder-settings", data={"minutes": "2", "slider_step": "1"}
+            "/admin/appointment-reminder-settings", data={"minutes": "2"}
         )
         assert response.status_code == 200
         assert 'value="2"' in response.text
         runtime = SqliteRuntimeSettingsRepository(client.app.state.db)
         assert runtime.appointment_reminder_minutes(default=1440) == 2
+        assert "Tiempos sugeridos" in page.text
+        assert "El slider" not in page.text
+
+
+def test_global_changes_save_explicitly_after_modal_confirmation(settings):
+    with TestClient(create_app(settings)) as client:
+        _login(client)
+        page = client.get("/admin")
+    assert 'type="button" onclick="openGlobalChange(this.form)"' in page.text
+    assert "htmx.ajax('POST', form.getAttribute('hx-post')" in page.text
+    assert "form.reportValidity()" in page.text
 
 
 def test_one_row_per_contact_keeps_the_most_recent_conversation():

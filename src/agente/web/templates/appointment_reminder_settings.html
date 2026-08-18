@@ -1,28 +1,24 @@
 {% from "macros.html" import hint %}
 <div class="form-action booking-followup-control">
-  <label for="appointment-reminder-slider"><strong>Recordatorio de cita</strong>
+  <label for="appointment-reminder-minutes"><strong>Recordatorio de cita</strong>
     {{ hint("Envía un recordatorio fijo antes de cada cita confirmada. Es un ajuste global. Al guardarlo, las citas futuras que todavía no reciben recordatorio se recalculan con este nuevo lapso.") }}
   </label>
   <p class="subtle">Enviar <output id="appointment-reminder-value">{{ minute_label(appointment_reminder_minutes) }}</output> antes de la cita.</p>
-  <form id="appointment-reminder-form" hx-post="/admin/appointment-reminder-settings" hx-target="#appointment-reminder-settings" hx-swap="outerHTML"
-    data-saved-minutes="{{ appointment_reminder_minutes }}" onsubmit="return confirmGlobalChange(this)">
-    <div class="range-row">
-      <div class="range-slider">
-        <output class="slider-step-count" id="appointment-reminder-step-count">{{ appointment_reminder_step_count }} pasos de {{ minute_label(appointment_reminder_slider_step) }}</output>
-        <input id="appointment-reminder-slider" name="minutes" type="range"
-          min="{{ appointment_reminder_min }}" max="{{ appointment_reminder_max }}"
-          step="{{ appointment_reminder_slider_step }}" value="{{ appointment_reminder_minutes }}"
-          oninput="document.getElementById('appointment-reminder-value').value=this.value >= 1440 && this.value % 1440 === 0 ? (this.value / 1440)+' día'+(this.value / 1440 === 1 ? '' : 's') : this.value >= 60 && this.value % 60 === 0 ? (this.value / 60)+' hora'+(this.value / 60 === 1 ? '' : 's') : this.value+' min';revealGlobalSave(this.form)">
-        <div class="slider-bounds"><span>1 min</span><span>7 días</span></div>
-      </div>
-      <label class="slider-stepper" for="appointment-reminder-stepper">Paso
-      <select id="appointment-reminder-stepper" name="slider_step" aria-label="Paso del slider de recordatorio"
-        onchange="const step=Number(this.value);document.getElementById('appointment-reminder-slider').step=step;document.getElementById('appointment-reminder-step-count').textContent=(10080/step)+' pasos de '+(step >= 1440 && step % 1440 === 0 ? (step/1440)+' día'+(step/1440 === 1 ? '' : 's') : step >= 60 && step % 60 === 0 ? (step/60)+' hora'+(step/60 === 1 ? '' : 's') : step+' min')">
-        {% for step in appointment_reminder_steps %}<option value="{{ step }}"{% if step == appointment_reminder_slider_step %} selected{% endif %}>{{ minute_label(step) }}</option>{% endfor %}
-      </select>
-      </label>
+  <form id="appointment-reminder-form" hx-post="/admin/appointment-reminder-settings"
+    hx-target="closest .form-action" hx-swap="outerHTML"
+    data-saved-minutes="{{ appointment_reminder_minutes }}">
+    <label class="reminder-minutes" for="appointment-reminder-minutes">Minutos antes de la cita
+      <input id="appointment-reminder-minutes" name="minutes" type="number"
+        min="{{ appointment_reminder_min }}" max="{{ appointment_reminder_max }}" step="1"
+        value="{{ appointment_reminder_minutes }}"
+        oninput="document.getElementById('appointment-reminder-value').value=formatReminderMinutes(Number(this.value));revealGlobalSave(this.form)">
+    </label>
+    <div class="reminder-presets" aria-label="Tiempos sugeridos">
+      {% for value, label in ((1, '1 min'), (2, '2 min'), (30, '30 min'), (60, '1 h'), (120, '2 h'), (720, '12 h'), (1440, '24 h'), (2880, '48 h'), (4320, '72 h')) %}
+      <button type="button" class="secondary" onclick="setReminderPreset(this, {{ value }})">{{ label }}</button>
+      {% endfor %}
     </div>
-    <button class="global-save" type="submit" hidden>Guardar cambio global</button>
+    <button class="global-save" type="button" onclick="openGlobalChange(this.form)" hidden>Guardar cambio global</button>
   </form>
-  <p class="subtle">Para pruebas locales, elige paso de 1 min y mueve el slider a 1 o 2 min. El paso sólo cambia cómo avanza el slider.</p>
+  <p class="subtle">Escribe cualquier valor entre 1 minuto y 7 días; los botones son accesos directos para pruebas y valores habituales.</p>
 </div>

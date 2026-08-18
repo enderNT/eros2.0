@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 from .adapters.anthropic.client import AnthropicClient
 from .adapters.calendly.client import CalendlyClient
@@ -197,6 +197,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await app.state.calendar.aclose()
 
     app = FastAPI(title="agente", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def _no_store_panel(request: Request, call_next):  # type: ignore[no-untyped-def]
+        """Never let a browser cache the panel.
+
+        Every /admin response renders live mutable state (mutes, reminder
+        settings, conversations). Without an explicit directive browsers apply
+        heuristic caching and happily serve a stale panel whose HTML no longer
+        matches the server — clicks then hit handlers that are gone.
+        """
+        response = await call_next(request)
+        if request.url.path.startswith("/admin") and not request.url.path.startswith(
+            "/admin/static"
+        ):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
     app.include_router(health_router)
     app.include_router(panel_router)
     app.include_router(webhooks_router)
