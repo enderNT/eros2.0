@@ -180,6 +180,7 @@ def caso_conversacional(
     escenario: str,
     resultado_esperado: str | None = None,
     rol: str = ROL_CLINICA,
+    hasta: int | None = None,
 ) -> ConversationalTestCase:
     """Convierte la conversación que ocurrió en el caso que deepeval va a juzgar.
 
@@ -187,11 +188,17 @@ def caso_conversacional(
     Calendly, el recordatorio, el seguimiento — entran igualmente como turnos del
     asistente, porque para el paciente son exactamente eso: mensajes que le
     llegan. Su origen queda en `metadata` para que el informe lo distinga.
+
+    `hasta` corta la conversación en un punto. Hace falta cuando el caso sigue
+    después de lo que se está juzgando: en C03 el arnés cancela por webhook y el
+    sistema manda, con toda razón, "tu cita quedó cancelada". Un juez que mide si
+    el bot prometió cancelar ve esa frase al final y la cuenta como promesa
+    incumplida — un falso positivo fabricado por el propio caso.
     """
     from deepeval.test_case import ConversationalTestCase, Turn
 
     turnos: list[Turn] = []
-    for intercambio in world.exchanges:
+    for intercambio in world.exchanges[:hasta]:
         if intercambio.origin == "paciente":
             turnos.append(Turn(role="user", content=intercambio.sent))
         evidencia = [f"[{nombre}] {salida}" for nombre, salida in intercambio.evidencia]

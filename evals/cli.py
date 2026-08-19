@@ -76,11 +76,20 @@ def _resolver(nombres: list[str]) -> list[str]:
 
 
 def _informes() -> dict[str, Path]:
+    """Un informe por **ejecución**, no por caso.
+
+    C04 corre dos ramas y deja dos directorios; agrupar por caso hacía que una
+    tapara a la otra y el resumen enseñaba media verdad.
+    """
     return {
-        directorio.name.split("-")[0]: directorio / "reporte.md"
+        directorio.name: directorio / "reporte.md"
         for directorio in sorted(RUNS.glob("C*"))
         if (directorio / "reporte.md").is_file()
     }
+
+
+def _caso_de(ejecucion: str) -> str:
+    return ejecucion.split("-")[0]
 
 
 def _hallazgos(texto: str) -> list[str]:
@@ -93,6 +102,31 @@ def _hallazgos(texto: str) -> list[str]:
     return [linea[2:].replace("**", "") for linea in cola.splitlines() if linea.startswith("- ")]
 
 
+CRITERIO = re.compile(
+    r"^\| (?P<numero>\d+) \| (?P<texto>.+?) \| (?P<resultado>SÍ|NO|N/A) \|"
+    r" (?P<esperado>SÍ|NO|—) \| (?P<lectura>[^|]+?) \| (?P<nota>.*?) \|$",
+    re.MULTILINE,
+)
+METRICA = re.compile(
+    r"^### (?P<nombre>.+?) — (?P<veredicto>PASA|FALLA) \((?P<score>[^)]+)\)$",
+    re.MULTILINE,
+)
+
+
+def _criterios(texto: str) -> list[dict[str, str]]:
+    return [encontrado.groupdict() for encontrado in CRITERIO.finditer(texto)]
+
+
+def _metricas(texto: str) -> list[dict[str, str]]:
+    resultado = []
+    for encontrado in METRICA.finditer(texto):
+        datos = encontrado.groupdict()
+        cola = texto[encontrado.end() :].strip().splitlines()
+        datos["razon"] = cola[0].strip() if cola else ""
+        resultado.append(datos)
+    return resultado
+
+
 def _campo(texto: str, etiqueta: str) -> str:
     encontrado = re.search(rf"^- \*\*{etiqueta}:\*\* (.+)$", texto, re.MULTILINE)
     return encontrado.group(1).strip() if encontrado else "?"
@@ -103,15 +137,20 @@ def _campo(texto: str, etiqueta: str) -> str:
 
 def cmd_listar(args: argparse.Namespace) -> int:
     informes = _informes()
-    print(f"{'caso':<6}{'último estado':<16}título")
+    print(f"{'caso':<6}{'último estado':<20}título")
     for clave, caso in _casos().items():
-        informe = informes.get(clave)
+        propios = [ruta for nombre, ruta in informes.items() if _caso_de(nombre) == clave]
         estado, color = "(sin ejecutar)", GRIS
-        if informe:
-            estado = _campo(informe.read_text(encoding="utf-8"), "Estado")
-            color = COLOR_ESTADO.get(estado, "")
+        if propios:
+            estados = [_campo(ruta.read_text(encoding="utf-8"), "Estado") for ruta in propios]
+            # Con varias ramas manda la peor: una rama roja no se compensa con otra verde.
+            orden = ["FALLA", "BLOQUEADO", "PARCIAL", "OK"]
+            estado = min(estados, key=lambda e: orden.index(e) if e in orden else 99)
+            if len(propios) > 1:
+                estado = f"{estado} ({len(propios)} ramas)"
+            color = COLOR_ESTADO.get(estado.split(" ")[0], "")
         marca = "" if "prueba" in caso else f" {GRIS}(sólo documento){FIN}"
-        print(f"{clave:<6}{_celda(estado, 16, color)}{caso['titulo']}{marca}")
+        print(f"{clave:<6}{_celda(estado, 20, color)}{caso['titulo']}{marca}")
     print(f"\n{GRIS}documento de cada caso: evals/casos/  ·  informes: evals/.runs/{FIN}")
     return 0
 
@@ -142,15 +181,15 @@ def cmd_resumen(args: argparse.Namespace) -> int:
     if not informes:
         print("no hay informes todavía: ejecuta `correr` primero")
         return 1
-    print(f"{'caso':<6}{'estado':<12}{'ajustes':<46}fecha")
+    print(f"{'ejecución':<20}{'estado':<12}{'ajustes':<46}fecha")
     for clave, ruta in informes.items():
         texto = ruta.read_text(encoding="utf-8")
-        if args.caso and clave != "C" + re.sub(r"\D", "", args.caso).zfill(2):
+        if args.caso and _caso_de(clave) != "C" + re.sub(r"\D", "", args.caso).zfill(2):
             continue
         estado = _campo(texto, "Estado")
         ajustes = _campo(texto, "Ajustes usados")
         print(
-            f"{clave:<6}{_celda(estado, 12, COLOR_ESTADO.get(estado, ''))}"
+            f"{clave:<20}{_celda(estado, 12, COLOR_ESTADO.get(estado, ''))}"
             f"{ajustes:<46}{_campo(texto, 'Fecha')}"
         )
 
@@ -166,12 +205,182 @@ def cmd_resumen(args: argparse.Namespace) -> int:
     return 0
 
 
+HALLAZGOS_MD = RAIZ / "HALLAZGOS.md"
+
+CABECERA = """<!-- GENERADO por `python -m evals hallazgos`. No editar a mano:
+     se reescribe entero en cada ejecución. Las decisiones humanas
+     (gravedad, si un hueco debería existir, qué se arregla) van en
+     E2E-CASOS.md, que sí se mantiene a mano. -->
+
+# Hallazgos
+
+Lo que las pruebas conversacionales han encontrado, destilado de los informes de
+`evals/.runs/` — que no entran al repo porque se regeneran en cada ejecución y
+llevan transcripciones completas. Este fichero sí entra: es la memoria.
+
+Tres cosas, y no se mezclan:
+
+* **Huecos** — el sistema no hace algo porque *nunca se implementó*. No es un bug.
+* **Desviaciones** — la realidad se apartó de lo documentado. O se rompió algo, o
+  alguien tapó un hueco y el caso está desactualizado. Piden que alguien mire.
+* **Métricas reprobadas** — el juez encontró un problema de comportamiento del
+  modelo, no de código.
+"""
+
+
+def cmd_hallazgos(args: argparse.Namespace) -> int:
+    """Destila los informes en un documento único y versionable."""
+    informes = _informes()
+    if not informes:
+        raise SystemExit("no hay informes: ejecuta `correr` primero")
+
+    huecos: list[tuple[str, dict[str, str]]] = []
+    desviaciones: list[tuple[str, dict[str, str]]] = []
+    reprobadas: list[tuple[str, dict[str, str]]] = []
+    ejecutados: list[tuple[str, str, str, str, bool]] = []
+
+    for clave, ruta in informes.items():
+        texto = ruta.read_text(encoding="utf-8")
+        for criterio in _criterios(texto):
+            lectura = criterio["lectura"].strip()
+            if lectura == "hueco confirmado":
+                huecos.append((clave, criterio))
+            elif lectura == "DESVIACIÓN":
+                desviaciones.append((clave, criterio))
+        for metrica in _metricas(texto):
+            if metrica["veredicto"] == "FALLA":
+                reprobadas.append((clave, metrica))
+        ejecutados.append(
+            (
+                clave,
+                _campo(texto, "Estado"),
+                _campo(texto, "Fecha"),
+                _campo(texto, "Ajustes usados"),
+                _obsoleto(_caso_de(clave), ruta),
+            )
+        )
+
+    lineas = [CABECERA, ""]
+    lineas += _tabla_huecos(huecos)
+    lineas += _tabla_desviaciones(desviaciones)
+    lineas += _tabla_metricas(reprobadas)
+    lineas += _tabla_cobertura(ejecutados)
+
+    contenido = "\n".join(lineas).rstrip() + "\n"
+    if args.mostrar:
+        print(contenido)
+        return 0
+    HALLAZGOS_MD.write_text(contenido, encoding="utf-8")
+    print(f"escrito {HALLAZGOS_MD.relative_to(RAIZ)}")
+    print(
+        f"  {len(huecos)} hueco(s), {len(desviaciones)} desviación(es),"
+        f" {len(reprobadas)} métrica(s) reprobada(s)"
+    )
+    return 0
+
+
+def _obsoleto(clave: str, informe: Path) -> bool:
+    """¿El informe es anterior al caso o al arnés que lo produjo?
+
+    Un informe viejo miente con total aplomo: dice OK de un código que ya cambió.
+    Comparar fechas de modificación no es exacto, pero avisa de lo único que
+    importa aquí — que ese resultado hay que volver a sacarlo antes de creérselo.
+    """
+    caso = _casos().get(clave, {}).get("prueba")
+    referencias = [Path(caso)] if caso else []
+    referencias += list((RAIZ / "evals" / "harness").glob("*.py"))
+    referencias += list((RAIZ / "src" / "agente").rglob("*.py"))
+    ultimo = max((ref.stat().st_mtime for ref in referencias if ref.is_file()), default=0)
+    return informe.stat().st_mtime < ultimo
+
+
+def _tabla_huecos(filas: list[tuple[str, dict[str, str]]]) -> list[str]:
+    if not filas:
+        return ["## Huecos", "", "Ninguno detectado en los informes disponibles.", ""]
+    lineas = [
+        "## Huecos",
+        "",
+        "Funcionalidad que no existe. Confirmado por una prueba, no supuesto.",
+        "",
+        "| ID | Ejecución | Qué no ocurre | Por qué |",
+        "|---|---|---|---|",
+    ]
+    for clave, criterio in filas:
+        lineas.append(
+            f"| {_caso_de(clave)}-{criterio['numero']} | {clave} | {criterio['texto']} |"
+            f" {criterio['nota'] or '—'} |"
+        )
+    return lineas + [""]
+
+
+def _tabla_desviaciones(filas: list[tuple[str, dict[str, str]]]) -> list[str]:
+    if not filas:
+        return [
+            "## Desviaciones (candidatos a bug)",
+            "",
+            "Ninguna: todo lo ejecutado se comportó como está documentado.",
+            "",
+        ]
+    lineas = [
+        "## Desviaciones (candidatos a bug)",
+        "",
+        "La realidad se apartó de lo documentado. Cada una necesita triaje humano:"
+        " o es un bug, o el caso quedó desactualizado.",
+        "",
+        "| ID | Ejecución | Criterio | Dio | Se esperaba | Nota |",
+        "|---|---|---|---|---|---|",
+    ]
+    for clave, criterio in filas:
+        lineas.append(
+            f"| {_caso_de(clave)}-{criterio['numero']} | {clave} | {criterio['texto']} |"
+            f" {criterio['resultado']} | {criterio['esperado']} | {criterio['nota'] or '—'} |"
+        )
+    return lineas + [""]
+
+
+def _tabla_metricas(filas: list[tuple[str, dict[str, str]]]) -> list[str]:
+    if not filas:
+        return ["## Métricas reprobadas", "", "Ninguna.", ""]
+    lineas = ["## Métricas reprobadas", ""]
+    for clave, metrica in filas:
+        lineas += [
+            f"### {clave} — {metrica['nombre']} ({metrica['score']})",
+            "",
+            metrica["razon"],
+            "",
+        ]
+    return lineas
+
+
+def _tabla_cobertura(filas: list[tuple[str, str, str, str, bool]]) -> list[str]:
+    catalogo = _casos()
+    ejecutados = {_caso_de(fila[0]) for fila in filas}
+    sin_ejecutar = [clave for clave in catalogo if clave not in ejecutados]
+    lineas = [
+        "## Cobertura",
+        "",
+        "De qué se puede hablar y de qué no. Un caso sin ejecutar no es un caso en verde.",
+        "",
+        "| Ejecución | Estado | Ajustes | Fecha |",
+        "|---|---|---|---|",
+    ]
+    for clave, estado, fecha, ajustes, obsoleto in filas:
+        marca = " ⚠️ informe anterior al último cambio de código" if obsoleto else ""
+        lineas.append(f"| {clave} | {estado}{marca} | {ajustes} | {fecha} |")
+    for clave in sin_ejecutar:
+        lineas.append(f"| {clave} | **sin ejecutar** | — | — |")
+    return lineas + [""]
+
+
 def cmd_informe(args: argparse.Namespace) -> int:
     clave = "C" + re.sub(r"\D", "", args.caso).zfill(2)
-    ruta = _informes().get(clave)
-    if ruta is None:
+    propios = {n: r for n, r in _informes().items() if _caso_de(n) == clave}
+    if not propios:
         raise SystemExit(f"{clave} no tiene informe todavía: `correr {clave}` primero")
-    print(ruta.read_text(encoding="utf-8"))
+    for nombre, ruta in propios.items():
+        if len(propios) > 1:
+            print(f"{GRIS}=== {nombre} ==={FIN}\n")
+        print(ruta.read_text(encoding="utf-8"))
     return 0
 
 
@@ -263,6 +472,12 @@ def main(argv: list[str] | None = None) -> int:
     informe = verbos.add_parser("informe", help="registro completo de un caso")
     informe.add_argument("caso")
     informe.set_defaults(func=cmd_informe)
+
+    hallazgos = verbos.add_parser("hallazgos", help="destilar los informes en HALLAZGOS.md")
+    hallazgos.add_argument(
+        "--mostrar", action="store_true", help="imprimir en vez de escribir el fichero"
+    )
+    hallazgos.set_defaults(func=cmd_hallazgos)
 
     verbos.add_parser("doctor", help="comprobar el entorno antes de gastar").set_defaults(
         func=cmd_doctor

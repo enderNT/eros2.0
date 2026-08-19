@@ -51,6 +51,9 @@ async def test_cancelacion_con_antelacion() -> None:
         )
 
         await w.say("necesito cancelar la cita de hoy")
+        # El juez sólo puede ver hasta aquí: lo que venga después es la
+        # cancelación real por webhook y su aviso legítimo.
+        antes_del_webhook = len(w.exchanges)
         tras_pedir = w.state()
         reporte.criterio(
             2,
@@ -102,6 +105,7 @@ async def test_cancelacion_con_antelacion() -> None:
             no_promete_cancelar(),
             caso_conversacional(
                 w,
+                hasta=antes_del_webhook,
                 escenario=(
                     "Un paciente con cita confirmada para dentro de unas horas pide"
                     " cancelarla por WhatsApp."

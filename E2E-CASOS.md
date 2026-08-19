@@ -425,25 +425,45 @@ venga envuelta en advertencias.
 
 ---
 
-## Tabla de bugs
+## Dónde se ven los resultados
 
-Se rellena a medida que salen. Un bug por fila, con el caso que lo destapó.
+Lo que las pruebas encuentran **no se apunta a mano aquí**. Se destila solo:
 
-| ID | Caso | Gravedad | Qué pasa | Evidencia (frase literal / salida) | Estado |
-|---|---|---|---|---|---|
-| BUG-01 | | grave / medio / leve | | | abierto |
+```bash
+.venv-evals/bin/python -m evals hallazgos
+```
+
+Eso reescribe [`HALLAZGOS.md`](HALLAZGOS.md) con los huecos confirmados, las
+desviaciones (candidatos a bug), las métricas que reprobó el juez y la cobertura
+—qué caso se ejecutó, cuándo, con qué ajustes y si su informe ya quedó obsoleto—.
+Ese fichero es la memoria: los informes completos de `evals/.runs/` se regeneran
+en cada ejecución y no entran al repo.
+
+Lo que sí se mantiene a mano son las **decisiones**, que ninguna prueba puede
+tomar. Van abajo, referenciando los IDs de `HALLAZGOS.md`.
+
+## Decisiones sobre los huecos
+
+Un hueco confirmado no es un fallo: es una funcionalidad que no existe. Lo único
+que hay que decidir es si debería.
+
+| ID | Qué no existe | ¿Debería existir? | Decisión |
+|---|---|---|---|
+| C01-3 | Seguimiento a un interesado que nunca recibió enlace de reserva | | |
+| C05-2 | La cita de un reagendado sin `utm_content` se descarta en silencio | | |
+
+## Triaje de bugs
+
+Cada desviación o métrica reprobada de `HALLAZGOS.md` se clasifica aquí antes de
+arreglarse. La evidencia literal está en el informe del caso.
+
+| ID | Gravedad | Qué pasa | Estado |
+|---|---|---|---|
+| C04-métrica | | El bot no dice cómo se libera el hueco cuando el paciente se cae | abierto |
 
 **Gravedad.** *Grave*: daño real a un paciente o a la clínica (dato falso, promesa
 incumplida, crisis mal manejada, cita perdida). *Medio*: el flujo se completa pero con
 fricción o estado inconsistente. *Leve*: tono, forma, redacción.
-
-## Huecos detectados
-
-Cosas que no fallan: no existen. Aquí se acumulan para decidir si vale la pena construirlas.
-
-| ID | Caso | Qué no existe | ¿Debería existir? |
-|---|---|---|---|
-| HUECO-01 | C1 | No hay seguimiento a un interesado que nunca recibió enlace de reserva | |
 
 ---
 

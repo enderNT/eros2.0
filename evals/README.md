@@ -153,8 +153,19 @@ En `evals/.runs/<caso>/`:
   que devolvió cada herramienta, y el estado final de la base.
 - `agente.db` — la base de esa ejecución, por si hay que mirarla con `sqlite3`.
 
-El directorio se borra y se rehace en cada ejecución del caso. Si un informe
-importa, cópialo fuera antes de volver a ejecutar.
+El directorio se borra y se rehace en cada ejecución del caso, y no entra al
+repo. Lo que sí perdura es el destilado:
+
+```bash
+.venv-evals/bin/python -m evals hallazgos
+```
+
+Reescribe [`../HALLAZGOS.md`](../HALLAZGOS.md) con los huecos confirmados, las
+desviaciones, las métricas reprobadas y la cobertura — incluido qué informes
+quedaron **anteriores al último cambio de código**, que es la forma de que un OK
+viejo no pase por un OK vigente. Las decisiones humanas (gravedad, si un hueco
+debería existir) van en [`../E2E-CASOS.md`](../E2E-CASOS.md), que sí se mantiene
+a mano.
 
 ---
 
