@@ -44,6 +44,8 @@ para eso lo acepta.
 | 4 | No se disparó un segundo recordatorio | SÍ |
 | 5 | Hubo un solo recordatorio en total | SÍ |
 
+> **En `--calendario real`, los criterios sobre la ocupación del hueco quedan informativos.** La reserva se simula por webhook, así que el hueco nunca llega a ocuparse en Calendly: responder que sí o que no sería inventarse el dato.
+
 Métrica del juez: *Deja claro qué hay que hacer para liberar la cita* (0.7).
 
 ## Cómo leerlo

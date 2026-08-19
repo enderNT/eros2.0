@@ -25,19 +25,57 @@ La pregunta que hay que poder responder antes de creerse un resultado.
 | Outbox, recordatorios, seguimiento | **reales** | lo que se mide en la mitad de los casos |
 | Panel `/admin` | **real** | los casos que lo tocan usan su API con cookie de sesión |
 | **Kapso** | **doble en memoria** | es transporte; mandar WhatsApp de verdad cuesta, ensucia una conversación real y no se puede repetir |
-| **Calendly** | **doble en memoria** | ofrece una cuadrícula fija de huecos para que el mismo caso dé lo mismo hoy y dentro de un mes |
+| **Calendly** | **conmutable**: doble en memoria o el real | ver el apartado 2; es el dial del arnés |
 
 Los dobles están en [`harness/fakes.py`](harness/fakes.py) e implementan los
 mismos puertos (`Channel`, `Calendar`) que usan los servicios, así que todo lo
 que hay por debajo corre exactamente igual que desplegado.
 
-**Nada sale de la máquina** salvo las llamadas al modelo. No se envía ningún
-WhatsApp. No se toca la agenda real de Calendly. La clave de Kapso y la de
-Calendly se sustituyen por valores inertes al arrancar el mundo de pruebas.
+**Nunca se envía un WhatsApp.** Kapso no es conmutable a propósito: mandar
+mensajes reales para leer una respuesta no es una prueba, es un envío. Su clave
+se sustituye por un valor inerte al arrancar, para que ni un error de cableado
+pueda acabar en el teléfono de alguien.
 
 ---
 
-## 2. Instalación (una vez)
+## 2. El dial: `--calendario fake` o `--calendario real`
+
+Lo que hace de esto un arnés y no un juego de mocks es que se puede **elegir
+cuánto sistema real entra**. Las dos posiciones no compiten: responden preguntas
+distintas.
+
+| | `fake` (por defecto) | `real` |
+|---|---|---|
+| De dónde salen los huecos | cuadrícula fija en memoria | API de Calendly |
+| Qué pregunta responde | **comportamiento**: qué dice el bot, qué herramienta usa, qué queda en la base | **integración**: ¿seguimos leyendo bien lo que Calendly devuelve hoy? |
+| Repetible | sí | depende de la agenda de esa semana |
+| Coste externo | ninguno | lecturas a Calendly |
+| Se puede inyectar un hueco a 35 min | sí | no: el caso se adapta al hueco real más cercano |
+
+```bash
+.venv-evals/bin/python -m evals correr --calendario real
+.venv-evals/bin/python -m pytest evals/cases -q --calendario real   # equivalente
+```
+
+**En modo real no se escribe nada en Calendly.** Las herramientas del agente sólo
+consultan disponibilidad y copian la `scheduling_url` que ya viene en cada hueco;
+`create_invitee` no lo llama nadie. La reserva se sigue simulando con un
+`invitee.created` firmado contra nuestro propio webhook.
+
+Eso tiene una consecuencia que conviene tener presente: **en modo real el hueco
+nunca llega a ocuparse**. Los criterios que preguntan "¿el hueco siguió
+bloqueado?" (C03, C04, C09) no se pueden responder ahí, y en vez de dar un `NO`
+falso se registran como **informativos**. El modo usado queda escrito en cada
+informe, porque dos informes del mismo caso en modos distintos no son
+comparables.
+
+Confirmar qué manda Calendly en un **reagendado** sigue necesitando a una persona
+pulsando *Reschedule*: eso está en la parte B de
+[`casos/C05-reagendado.md`](casos/C05-reagendado.md).
+
+---
+
+## 3. Instalación (una vez)
 
 deepeval arrastra un árbol de dependencias que no pinta nada en la imagen que se
 despliega, así que vive en su propio entorno:
@@ -67,30 +105,31 @@ que se califica a sí mismo tiende a aprobarse.
 
 ---
 
-## 3. Ejecutar
+## 4. Ejecutar
 
-Desde la raíz del repo, siempre con el intérprete de `.venv-evals`.
+Hay un mando para esto. Evita tener que recordar rutas, el nombre de la opción
+del calendario y dónde queda el informe:
+
+```bash
+.venv-evals/bin/python -m evals doctor          # ¿está todo antes de gastar?
+.venv-evals/bin/python -m evals listar          # qué casos hay y cómo salieron
+.venv-evals/bin/python -m evals correr C10      # C10, c10, 10 — da igual
+.venv-evals/bin/python -m evals correr C3 C9 --calendario real
+.venv-evals/bin/python -m evals correr --rapido # todo menos los lentos
+.venv-evals/bin/python -m evals resumen         # tabla + hallazgos acumulados
+.venv-evals/bin/python -m evals informe C06     # el registro completo
+```
+
+`correr` termina imprimiendo el resumen, así que una sola orden deja a la vista
+qué pasó y qué se encontró.
+
+Por debajo es pytest, y se puede usar directamente cuando haga falta algo que el
+mando no expone:
 
 ```bash
 .venv-evals/bin/python -m pytest evals/cases -q
-```
-
-Un caso suelto:
-
-```bash
-.venv-evals/bin/python -m pytest evals/cases/test_c06_pendientes.py -q
-```
-
-Todo menos el caso largo:
-
-```bash
-.venv-evals/bin/python -m pytest evals/cases -q -m "not lento"
-```
-
-Con la salida del juez a la vista mientras corre:
-
-```bash
 .venv-evals/bin/python -m pytest evals/cases/test_c03_cancelacion.py -q -s
+.venv-evals/bin/python -m pytest evals/cases -q -m "not lento" --calendario real
 ```
 
 **No hace falta levantar `docker compose` ni ngrok.** La app se arranca dentro
@@ -105,7 +144,7 @@ por caso: entre 3 y 8 turnos, salvo C02 que son 17 y por eso está marcado
 
 ---
 
-## 4. Qué deja cada ejecución
+## 5. Qué deja cada ejecución
 
 En `evals/.runs/<caso>/`:
 
@@ -119,7 +158,7 @@ importa, cópialo fuera antes de volver a ejecutar.
 
 ---
 
-## 5. Cómo leer un resultado
+## 6. Cómo leer un resultado
 
 Cada criterio declara qué debería pasar **según el código de hoy**, no según lo
 que sería deseable. De ahí salen tres lecturas y no se deben mezclar:
@@ -140,7 +179,7 @@ Las métricas del juez sí hacen fallar el caso cuando no llegan a su umbral.
 
 ---
 
-## 6. Reglas para el agente que ejecuta
+## 7. Reglas para el agente que ejecuta
 
 Las mismas ocho del protocolo de `E2E-CASOS.md`, con lo que cambia al ejecutarse
 desde aquí:
@@ -158,11 +197,11 @@ desde aquí:
 7. **Reporta el informe, no tu resumen de él.** El fichero `reporte.md` es la
    evidencia; el resumen se escribe encima, no en lugar de él.
 8. **Si el juez reprueba, lee su razón antes de creerle.** Un juez sin evidencia
-   se equivoca (ver apartado 7).
+   se equivoca (ver apartado 8).
 
 ---
 
-## 7. Qué hacer cuando el juez se equivoca
+## 8. Qué hacer cuando el juez se equivoca
 
 Pasa, y la forma más común está resuelta: al principio el juez marcaba como
 inventado el precio de $1,000 MXN, que sale literal de la wiki. No mentía —
@@ -184,7 +223,7 @@ Si aun así una métrica reprueba algo que a ojo está bien:
 
 ---
 
-## 8. Cómo se añade un caso
+## 9. Cómo se añade un caso
 
 1. Escribe primero el markdown en `casos/CNN-nombre.md`, con la misma estructura
    que los que ya hay: qué se prueba, qué está bajo prueba, pasos, criterios con
@@ -209,7 +248,7 @@ Referencia completa del arnés: [`harness/world.py`](harness/world.py).
 
 ---
 
-## 9. Índice de casos
+## 10. Índice de casos
 
 Orden sugerido: de barato y sin dependencias a caro y con estado real.
 

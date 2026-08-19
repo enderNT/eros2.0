@@ -34,6 +34,8 @@ minutos.
 | 3 | Los dos huecos quedaron bloqueados en el calendario | SÍ |
 | 4 | El panel muestra la cita más temprana | SÍ |
 
+> **En `--calendario real`, los criterios sobre la ocupación del hueco quedan informativos.** La reserva se simula por webhook, así que el hueco nunca llega a ocuparse en Calendly: responder que sí o que no sería inventarse el dato.
+
 Métrica del juez: *Avisa de que la cita anterior sigue en pie* (0.7).
 
 ## Cómo leerlo

@@ -62,7 +62,7 @@ async def test_cancelacion_con_antelacion() -> None:
         reporte.criterio(
             3,
             "El hueco sigue ocupado en el calendario",
-            w.calendar.is_booked(slot),
+            w.ocupacion(slot),
             esperado=True,
             nota="Nadie llama a Calendly: el hueco no se libera por hablar con el bot.",
         )
@@ -94,7 +94,7 @@ async def test_cancelacion_con_antelacion() -> None:
         reporte.criterio(
             7,
             "El hueco volvió a quedar libre",
-            not w.calendar.is_booked(slot),
+            None if w.ocupacion(slot) is None else not w.ocupacion(slot),
             esperado=True,
         )
 

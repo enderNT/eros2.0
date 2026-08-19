@@ -72,7 +72,7 @@ async def test_se_cae_tras_el_recordatorio(rama: str, confirma: bool) -> None:
         reporte.criterio(
             3,
             "El hueco sigue bloqueado en el calendario",
-            w.calendar.is_booked(slot),
+            w.ocupacion(slot),
             esperado=True,
             nota="Hueco: nadie libera el horario, así que se pierde para otro paciente.",
         )

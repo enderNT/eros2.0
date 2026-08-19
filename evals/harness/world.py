@@ -27,7 +27,7 @@ import uuid
 from collections.abc import Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -42,7 +42,8 @@ from agente.adapters.store.mutes import SqliteMutesRepository
 from agente.config import load_settings
 from agente.domain.contacts import ContactKey
 
-from .fakes import FakeCalendar, RecordingChannel
+from .calendario import CalendarioFalso, CalendlyEnVivo, crear_calendario, modo_configurado
+from .fakes import RecordingChannel
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNS_DIR = REPO_ROOT / "evals" / ".runs"
@@ -117,13 +118,16 @@ class Snapshot:
 
 
 class World:
-    def __init__(self, name: str, app, client, channel, calendar, settings) -> None:
+    def __init__(self, name: str, app, client, channel, calendar, settings, modo) -> None:
         self.name = name
         self.app = app
         self.client: httpx.AsyncClient = client
         self.channel: RecordingChannel = channel
-        self.calendar: FakeCalendar = calendar
+        self.calendar: CalendarioFalso | CalendlyEnVivo = calendar
         self.settings = settings
+        # `fake` o `real`. Queda en el informe de cada caso: un resultado no se
+        # puede comparar con otro sin saber cuánto sistema real había detrás.
+        self.modo_calendario = modo
         self.key = ContactKey(PHONE_NUMBER_ID, CONTACT)
         self.exchanges: list[Exchange] = []
         self.tool_log: list[tuple[str, str]] = []
@@ -274,14 +278,17 @@ class World:
         Devuelve `(event_uri, horario realmente reservado)`; los casos calculan sus
         tiempos a partir de ese horario.
         """
-        objetivo = (datetime.now(UTC) + timedelta(minutes=en_minutos)).replace(
-            second=0, microsecond=0
+        objetivo = await self.calendar.elegir_hueco(en_minutos)
+        zona = ZoneInfo(self.settings.calendly_timezone)
+        local = objetivo.astimezone(zona)
+        cuando = (
+            f"hoy a las {local:%H:%M}"
+            if local.date() == datetime.now(UTC).astimezone(zona).date()
+            else f"el {local:%d/%m} a las {local:%H:%M}"
         )
-        self.calendar.add_slot(objetivo)
-        etiqueta = objetivo.astimezone(ZoneInfo(self.settings.calendly_timezone)).strftime("%H:%M")
         await self.say(
-            "hola, quiero agendar la cita de valoración hoy a las"
-            f" {etiqueta}, ¿me pasas el enlace para reservarla?"
+            f"hola, quiero agendar la cita de valoración {cuando},"
+            " ¿me pasas el enlace para reservarla?"
         )
         afirmaciones = [
             "sí, ese horario me sirve, mándame el enlace por favor",
@@ -385,6 +392,17 @@ class World:
         self._record_system(mark, f"panel: forzar recordatorio -> {result}")
         return result
 
+    def ocupacion(self, slot_utc: datetime) -> bool | None:
+        """¿El hueco sigue bloqueado? `None` cuando el modo no puede responderlo.
+
+        En modo real la reserva se simula por webhook y el hueco nunca llega a
+        ocuparse en Calendly. Devolver `False` ahí sería mentir: el criterio se
+        registra como informativo y no cuenta ni como acierto ni como fallo.
+        """
+        if not getattr(self.calendar, "soporta_ocupacion", False):
+            return None
+        return self.calendar.is_booked(slot_utc)
+
     # ------------------------------------------------------------- estado
 
     def state(self) -> Snapshot:
@@ -485,7 +503,7 @@ def _parse(value: str) -> datetime:
 
 
 @asynccontextmanager
-async def world(name: str, **overrides: Any):
+async def world(name: str, *, calendario: str | None = None, **overrides: Any):
     """Arranca la app con los dobles puestos y la apaga al salir.
 
     Los dobles se inyectan sustituyendo las clases **en el módulo de composición**
@@ -498,22 +516,26 @@ async def world(name: str, **overrides: Any):
     if db_path.exists():
         db_path.unlink()
 
+    modo = modo_configurado(calendario)
     base = load_settings()
-    settings = base.model_copy(
-        update={
-            "db_path": db_path,
-            "kapso_webhook_secret": KAPSO_SECRET,
-            "kapso_phone_number_id": PHONE_NUMBER_ID,
-            "kapso_api_key": "eval-unused",
-            "calendly_signing_key": CALENDLY_SIGNING_KEY,
-            "calendly_token": "eval-unused",
-            # Que nada venza solo: los vencimientos los dispara el test.
-            "booking_followup_poll_seconds": 3600.0,
-            **overrides,
-        }
-    )
+    ajustes: dict[str, Any] = {
+        "db_path": db_path,
+        # Kapso nunca es real: la clave se sustituye por una inerte para que un
+        # error de cableado no pueda acabar en un envío.
+        "kapso_webhook_secret": KAPSO_SECRET,
+        "kapso_phone_number_id": PHONE_NUMBER_ID,
+        "kapso_api_key": "eval-unused",
+        # La firma de Calendly es siempre la nuestra: el webhook lo emite el
+        # arnés, incluso cuando la disponibilidad viene de Calendly de verdad.
+        "calendly_signing_key": CALENDLY_SIGNING_KEY,
+        # Que nada venza solo: los vencimientos los dispara el test.
+        "booking_followup_poll_seconds": 3600.0,
+    }
+    if modo == "fake":
+        ajustes["calendly_token"] = "eval-unused"
+    settings = base.model_copy(update=ajustes | overrides)
     channel = RecordingChannel()
-    calendar = FakeCalendar(timezone=settings.calendly_timezone)
+    calendar = crear_calendario(modo, settings)
     tool_log: list[tuple[str, str]] = []
     build_tools_real = app_module.build_tools
 
@@ -548,6 +570,6 @@ async def world(name: str, **overrides: Any):
             async with httpx.AsyncClient(
                 transport=transport, base_url="http://eval", timeout=180
             ) as client:
-                mundo = World(name, app, client, channel, calendar, settings)
+                mundo = World(name, app, client, channel, calendar, settings, modo)
                 mundo.tool_log = tool_log
                 yield mundo

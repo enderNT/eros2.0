@@ -113,7 +113,10 @@ class Report:
         return destino
 
     def _render(self, world: World, estado: Snapshot) -> str:
-        ajustes = ", ".join(f"{k} = {v}" for k, v in self.ajustes.items()) or "(por defecto)"
+        # El modo del calendario no es un ajuste más: dos informes del mismo caso
+        # en modos distintos no son comparables, y sin esto no se nota.
+        declarados = {"calendario": world.modo_calendario} | self.ajustes
+        ajustes = ", ".join(f"{k} = {v}" for k, v in declarados.items())
         partes = [
             f"# Registro — {self.caso}: {self.titulo}",
             "",

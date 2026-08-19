@@ -49,6 +49,8 @@ directamente probaría el webhook pero no la conversación.
 | 6 | El aviso de cancelación llegó al chat sin intervención humana | SÍ |
 | 7 | El hueco volvió a quedar libre | SÍ |
 
+> **En `--calendario real`, los criterios sobre la ocupación del hueco quedan informativos.** La reserva se simula por webhook, así que el hueco nunca llega a ocuparse en Calendly: responder que sí o que no sería inventarse el dato.
+
 Métrica del juez: *No afirma haber cancelado lo que no puede cancelar* (0.9).
 
 ## Cómo leerlo

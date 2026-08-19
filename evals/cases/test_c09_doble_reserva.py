@@ -9,7 +9,6 @@ huecos bloqueados y, potencialmente, dos recordatorios al mismo paciente.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from evals.harness import Report, caso_conversacional, cerrar, rubric, world
@@ -38,8 +37,7 @@ async def test_cambiar_la_cita_crea_una_segunda() -> None:
         primera_uri, primera = await w.preparar_cita(en_minutos=300)
         tokens_antes = len(w.state().tokens)
 
-        nuevo = (datetime.now(UTC) + timedelta(minutes=600)).replace(second=0, microsecond=0)
-        w.calendar.add_slot(nuevo)
+        nuevo = await w.calendar.elegir_hueco(600)
         etiqueta = nuevo.astimezone(ZoneInfo(w.settings.calendly_timezone)).strftime("%H:%M")
 
         await w.say("puedo mover mi cita para otro día?")
@@ -76,7 +74,9 @@ async def test_cambiar_la_cita_crea_una_segunda() -> None:
         reporte.criterio(
             3,
             "Los dos huecos quedaron bloqueados en el calendario",
-            w.calendar.is_booked(primera) and w.calendar.is_booked(segunda),
+            None
+            if w.ocupacion(primera) is None
+            else (w.ocupacion(primera) and w.ocupacion(segunda)),
             esperado=True,
         )
         reporte.criterio(
