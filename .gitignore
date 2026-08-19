@@ -16,9 +16,18 @@ src/agente/web/static/panel/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
-.deepeval/
 
 # Agent setup: settings are shared, everything else is local
 .claude/*
 !.claude/settings.json
 .qwen/tmp/
+
+# Casos conversacionales (`evals/`). El entorno va aparte del de la app porque
+# deepeval arrastra su propio árbol de dependencias.
+.venv-evals/
+# Un informe y una base SQLite por ejecución. Se regeneran en cada corrida y
+# llevan la transcripción completa de la conversación: no entran al repo.
+evals/.runs/
+# Rastros que deepeval deja en la raíz: `.deepeval/` (caché y último run) y
+# `.deepeval_telemetry.txt`, que aparece si alguien corre el CLI sin opt-out.
+.deepeval*

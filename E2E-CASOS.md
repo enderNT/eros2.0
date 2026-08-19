@@ -10,6 +10,26 @@ prueba salga verde: es dejar escrito qué funciona, qué no, y qué todavía no 
 
 ---
 
+## Cómo se ejecutan ahora
+
+Estos casos **ya son ejecutables**. Cada uno tiene su procedimiento exacto en
+`evals/casos/CNN-*.md` y su implementación en `evals/cases/`, sobre un arnés que
+arranca la aplicación real con Kapso y Calendly sustituidos por dobles en
+memoria: no se manda ningún WhatsApp y no se toca la agenda real.
+
+```bash
+.venv-evals/bin/python -m pytest evals/cases -q
+```
+
+Instalación, qué es real y qué no, cómo leer un resultado y qué hacer cuando el
+juez se equivoca: [`evals/README.md`](evals/README.md).
+
+Este documento sigue siendo la versión narrativa — para qué sirve cada caso y qué
+se quiso medir. Los criterios que **mandan** son los del fichero de cada caso,
+porque son los que se ejecutan.
+
+---
+
 ## 0. Protocolo para el agente que ejecuta
 
 Reglas duras. Romper una invalida el caso completo.
