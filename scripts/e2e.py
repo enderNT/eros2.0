@@ -183,6 +183,12 @@ def cmd_book(args: argparse.Namespace) -> int:
                 "name": args.name,
                 "email": args.email,
                 "tracking": {"utm_content": token},
+                # Sin esto el servicio descarta la reserva por
+                # `phone_mismatch`: el enlace personalizado no basta como
+                # identidad, el teléfono que recoge Calendly la corrobora.
+                "questions_and_answers": [
+                    {"question": "Número de teléfono", "answer": CONTACT}
+                ],
                 "scheduled_event": {"start_time": slot} if slot else {},
             },
         }
@@ -242,6 +248,18 @@ def cmd_state(_args: argparse.Namespace) -> int:
         print(f"{row['slot_utc']}  {row['status']}  {row['calendly_event_id']}")
     if not rows:
         print("(ninguna)")
+
+    print("\n-- recordatorios y seguimientos programados --")
+    rows = conn.execute(
+        "SELECT id, kind, due_at, sent_at, appointment_event_id FROM outbox"
+        " WHERE phone_number_id = ? AND contact_phone = ? ORDER BY id",
+        where,
+    ).fetchall()
+    for row in rows or []:
+        estado = f"enviado {row['sent_at']}" if row["sent_at"] else "PENDIENTE"
+        print(f"#{row['id']}  {row['kind']}  vence {row['due_at']}  {estado}")
+    if not rows:
+        print("(ninguno: sin cita confirmada no hay recordatorio que enviar)")
 
     print("\n-- mute --")
     mute = conn.execute(

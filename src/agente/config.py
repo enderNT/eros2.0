@@ -47,7 +47,6 @@ class Settings(BaseSettings):
     calendly_location_kind: str = "physical"
     calendly_location_value: str = ""
     calendly_scheduling_link: str = ""
-    calendly_webhook_token: str = ""
     calendly_signing_key: str = ""
 
     # Storage
