@@ -125,6 +125,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             enabled=lambda: runtime_settings.appointment_reminder_enabled(
                 cfg.appointment_reminder_enabled
             ),
+            address=cfg.calendly_location_value,
         )
         app.state.appointment_reminders = reminders
         # Covers appointments confirmed before this feature was deployed.

@@ -33,7 +33,7 @@ from zoneinfo import ZoneInfo
 
 from ..domain.contacts import ContactKey
 from ..domain.errors import CalendlyError, KapsoError, StoreError
-from ..domain.scheduling import Slot, slot_label
+from ..domain.scheduling import Slot, address_sentence, end_sentence, slot_label
 from ..ports.calendar import Calendar, CalendarSlot
 from ..ports.channel import Channel
 from ..ports.store import (
@@ -75,20 +75,12 @@ def confirmation_text(slot_utc: datetime, timezone: str, now: datetime, address:
     address is worse than no address.
     """
     label = slot_label(Slot(slot_utc, slot_utc), ZoneInfo(timezone), now)
-    parts = [_sentence(f"¡Listo! Tu cita quedó confirmada: {label}")]
-    if address:
-        parts.append(_sentence(f"La dirección es {address}"))
+    parts = [end_sentence(f"¡Listo! Tu cita quedó confirmada: {label}")]
+    direccion = address_sentence(address)
+    if direccion:
+        parts.append(direccion)
     parts.append("Si necesitas cambiarla, escríbeme por aquí.")
     return " ".join(parts)
-
-
-def _sentence(text: str) -> str:
-    """Close the sentence without doubling the period.
-
-    Both halves can already end in one: the time label ends in "p. m." and the
-    configured address is written by a human who may or may not punctuate it.
-    """
-    return text if text.rstrip().endswith((".", "!", "?")) else f"{text}."
 
 
 class BookingService:
@@ -115,6 +107,16 @@ class BookingService:
         self._calendar, self._invitee_email = calendar, invitee_email
         self._phone_number_id = phone_number_id
         self._timezone, self._address, self._now = timezone, address, now
+
+    @property
+    def address(self) -> str:
+        """La dirección de la sede, para quien tenga que decírsela al paciente.
+
+        Vive aquí porque aquí es donde una cita se vuelve real, y porque es el
+        único sitio que ya la tenía: `agendar_cita` la necesita para que la
+        confirmación diga a dónde hay que ir, no sólo cuándo.
+        """
+        return self._address
 
     async def book_for_contact(self, key: ContactKey, slot: CalendarSlot) -> datetime:
         """Reserve on the patient's behalf and record it. Returns the slot booked.

@@ -20,7 +20,7 @@ from datetime import timedelta
 
 import pytest
 
-from evals.harness import Report, caso_conversacional, cerrar, rubric, world
+from evals.harness import Report, caso_conversacional, cerrar, dice, rubric, world
 
 CASO = "C04"
 RECORDATORIO_MIN = 30
@@ -70,6 +70,17 @@ async def test_se_cae_tras_el_recordatorio(rama: str, confirma: bool) -> None:
             any("recordamos" in texto.lower() for texto in salidas),
             esperado=True,
             nota=f"{len(salidas)} mensaje(s) al disparar vencimientos",
+        )
+        reporte.criterio(
+            "1b",
+            "El recordatorio dice también dónde es, no sólo cuándo",
+            any(dice(texto, "sócrates") for texto in salidas),
+            esperado=True,
+            nota=(
+                "Es el mensaje que la persona tiene delante justo antes de salir de"
+                " casa. Mandarla a buscar la dirección en el historial es hacerle"
+                " trabajo que nos toca a nosotros."
+            ),
         )
 
         if confirma:

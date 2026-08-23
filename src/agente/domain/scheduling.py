@@ -74,6 +74,24 @@ def slot_label(slot: Slot, tz: ZoneInfo, now: datetime) -> str:
     return f"{_day_label(local.date(), now.astimezone(tz).date())}, {_time_label(local)}"
 
 
+def end_sentence(text: str) -> str:
+    """Cerrar la frase sin duplicar el punto.
+
+    Las dos mitades pueden traerlo ya puesto: la etiqueta de hora acaba en
+    "p. m." y la dirección la escribe una persona que puntúa como quiera.
+    """
+    return text if text.rstrip().endswith((".", "!", "?")) else f"{text}."
+
+
+def address_sentence(address: str) -> str:
+    """La dirección como frase suelta, o cadena vacía si no hay ninguna.
+
+    Vacía y no un texto por defecto: una dirección inventada es peor que
+    ninguna, y quien la lea va a subirse a un coche.
+    """
+    return end_sentence(f"La dirección es {address}") if address.strip() else ""
+
+
 def is_bookable(slot: Slot, now: datetime, buffer: timedelta) -> bool:
     """A slot is bookable when it starts at or after `now + buffer`.
 

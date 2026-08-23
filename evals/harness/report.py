@@ -27,7 +27,7 @@ from .world import RUNS_DIR, Snapshot, World
 
 @dataclass(slots=True)
 class Criterio:
-    numero: int
+    numero: int | str
     texto: str
     resultado: bool | None
     esperado: bool | None = None
@@ -68,7 +68,7 @@ class Report:
 
     def criterio(
         self,
-        numero: int,
+        numero: int | str,
         texto: str,
         resultado: bool | None,
         *,
@@ -178,7 +178,6 @@ def _estado(estado: Snapshot) -> str:
         marca = f"enviado {row.sent_at.isoformat()}" if row.sent else "PENDIENTE"
         lineas.append(f"  {row.kind}  vence {row.due_at.isoformat()}  {marca}")
     lineas.append(f"mute: {'SÍ' if estado.muted else 'no'}  ({estado.mute_reason or '-'})")
-    lineas.append(f"tokens de reserva: {len(estado.tokens)}")
     lineas.append(f"perfil: {estado.profile}")
     lineas.append("```")
     return "\n".join(lineas)

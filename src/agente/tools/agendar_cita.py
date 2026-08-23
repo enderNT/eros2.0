@@ -38,26 +38,39 @@ TAKEN = (
 )
 
 
-def confirmed(label: str, movida: bool) -> str:
+def confirmed(label: str, movida: bool, address: str = "") -> str:
     """What the model reads after a successful booking.
 
     It is told the appointment exists, and told to say so — the opposite of the
     old link flow. When the booking replaced an earlier one, it is told that too,
     because a patient who moved their appointment needs to hear that the old time
     is gone, not just that a new one exists.
+
+    The address is handed over **verbatim** rather than left to the wiki. The
+    model can look it up there, and usually would; but a confirmation is the one
+    message the patient screenshots, and an address it half-remembers is the kind
+    of mistake that ends with somebody outside the wrong building. Quoting it
+    here also means a clinic that moves premises changes one setting, not a
+    setting and a hope.
     """
+    ir = (
+        f' Dile también dónde es, con esta dirección tal cual: "{address}".'
+        " No la reformules ni la abrevies."
+        if address.strip()
+        else ""
+    )
     if movida:
         return (
             f"Cita reagendada para {label}. La cita anterior quedó cancelada y su horario"
             " liberado. Dile al paciente las DOS cosas, no sólo la primera: el día y la"
             " hora nuevos, y que su cita anterior ya quedó cancelada y no tiene que"
             " hacer nada con ella. Si sólo confirmas la nueva, se queda sin saber si"
-            " sigue teniendo la vieja."
+            f" sigue teniendo la vieja.{ir}"
         )
     return (
         f"Cita agendada y confirmada para {label}. Confírmaselo al paciente con"
         " naturalidad, diciéndole el día y la hora. No le pidas que entre a ningún"
-        " enlace ni que rellene nada: ya está hecho."
+        f" enlace ni que rellene nada: ya está hecho.{ir}"
     )
 
 
@@ -76,4 +89,4 @@ async def agendar_cita(
     except SlotTakenError:
         return TAKEN
     label = slot_label(Slot(reservado, reservado), ZoneInfo(timezone), now)
-    return confirmed(label, movida)
+    return confirmed(label, movida, booking.address)

@@ -37,6 +37,7 @@ Recordatorio a **30 minutos**, cita a 35 minutos con `preparar_cita_directa`.
 |---|---|---|
 | 0 | La cita de la precondición la reservó el propio sistema, sin enlace | SÍ |
 | 1 | El recordatorio salió al vencer su hora | SÍ |
+| 1b | El recordatorio dice también dónde es, no sólo cuándo | SÍ |
 | 2 | Avisar no cancela por sí solo: la cita sigue vigente hasta el sí | SÍ |
 | 3 | Con el sí explícito, la cita queda cancelada | SÍ |
 | 4 | El hueco se soltó y otro paciente puede tomarlo | SÍ |
@@ -56,3 +57,15 @@ que introduce tener `cancel`, y aquí se vigila.
 
 Comparar las dos ramas sigue siendo el punto: si A y B se comportan distinto,
 merece explicación.
+
+## La dirección en el recordatorio
+
+El criterio 1b comprueba que el recordatorio nombre la sede. Se mide aquí y no en
+un caso propio porque éste es el único que ya lee un recordatorio de verdad,
+salido de la app real.
+
+Va también en la confirmación al agendar, y repetirla no es descuido: entre una
+cosa y otra pueden pasar días, y el recordatorio es el mensaje que la persona
+tiene abierto justo cuando va saliendo de casa. La dirección sale de
+`CALENDLY_LOCATION_VALUE`; sin configurar, los dos mensajes la omiten en vez de
+inventarse una.

@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 from ..domain.contacts import ContactKey
 from ..domain.errors import KapsoError
-from ..domain.scheduling import Slot, slot_label
+from ..domain.scheduling import Slot, address_sentence, slot_label
 from ..ports.channel import Channel
 from ..ports.store import (
     AppointmentsRepository,
@@ -22,12 +22,22 @@ from ..ports.store import (
 log = logging.getLogger(__name__)
 
 
-def reminder_text(slot_utc: datetime, timezone: ZoneInfo, now: datetime) -> str:
+def reminder_text(slot_utc: datetime, timezone: ZoneInfo, now: datetime, address: str = "") -> str:
+    """El recordatorio: cuándo es la cita y a dónde hay que ir.
+
+    La dirección se repite aquí aunque ya fuera en la confirmación, y a propósito.
+    Entre una cosa y otra pueden pasar días; el recordatorio es el mensaje que la
+    persona tiene delante justo cuando está a punto de salir de casa, y mandarla
+    a buscar la dirección en el historial es hacerle trabajo que nos toca a
+    nosotros.
+    """
     label = slot_label(Slot(slot_utc, slot_utc), timezone, now)
-    return (
-        f"Hola, te recordamos que tienes una cita {label}. "
-        "Si necesitas cambiarla, escríbeme por aquí."
-    )
+    partes = [f"Hola, te recordamos que tienes una cita {label}."]
+    direccion = address_sentence(address)
+    if direccion:
+        partes.append(direccion)
+    partes.append("Si necesitas cambiarla, escríbeme por aquí.")
+    return " ".join(partes)
 
 
 class AppointmentReminders:
@@ -49,12 +59,13 @@ class AppointmentReminders:
         timezone: str,
         minutes_before: Callable[[], int],
         enabled: Callable[[], bool] = lambda: True,
+        address: str = "",
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._outbox, self._appointments = outbox, appointments
         self._messages, self._mutes, self._channel = messages, mutes, channel
         self._timezone, self._minutes_before, self._now = ZoneInfo(timezone), minutes_before, now
-        self._enabled = enabled
+        self._enabled, self._address = enabled, address
 
     def schedule(self, key: ContactKey, event_id: str, slot_utc: datetime, now: datetime) -> None:
         if not self._enabled() or slot_utc <= now:
@@ -64,7 +75,7 @@ class AppointmentReminders:
             key,
             event_id,
             slot_utc,
-            reminder_text(slot_utc, self._timezone, now),
+            reminder_text(slot_utc, self._timezone, now, self._address),
             due_at,
         )
 
@@ -86,7 +97,7 @@ class AppointmentReminders:
                 appointment.key,
                 appointment.calendly_event_id,
                 appointment.slot_utc,
-                reminder_text(appointment.slot_utc, self._timezone, now),
+                reminder_text(appointment.slot_utc, self._timezone, now, self._address),
                 due_at,
                 replace_pending=True,
             )
