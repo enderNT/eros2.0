@@ -66,11 +66,12 @@ class InterestFollowups:
         mutes: MutesRepository,
         channel: Channel,
         delay_minutes: Callable[[], int] = lambda: 60,
+        enabled: Callable[[], bool] = lambda: True,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._outbox, self._appointments = outbox, appointments
         self._messages, self._mutes, self._channel = messages, mutes, channel
-        self._delay_minutes, self._now = delay_minutes, now
+        self._delay_minutes, self._enabled, self._now = delay_minutes, enabled, now
 
     def schedule_from_outbound(self, key: ContactKey, text: str, sent_at: datetime) -> None:
         """Arm the nudge after the bot speaks, unless the contact already booked.
@@ -80,7 +81,7 @@ class InterestFollowups:
         nothing to read in it: unlike a booking link, an interested silence looks
         the same whatever the bot happened to say.
         """
-        if self._has_appointment(key):
+        if not self._enabled() or self._has_appointment(key):
             return
         self._outbox.schedule_interest_followup(
             key, FOLLOWUP_TEXT, sent_at + timedelta(minutes=self._delay_minutes())
@@ -90,7 +91,18 @@ class InterestFollowups:
         """The patient wrote back, so the silence this was waiting on is over."""
         self._outbox.cancel_for_contact(key, kind=KIND)
 
+    def drop_pending(self) -> None:
+        """Vaciar la cola entera, para cuando la clínica apaga esta conducta.
+
+        Apagar tiene que borrar lo encolado, no sólo dejar de encolar. Un aviso
+        que sobrevive al interruptor sale en cuanto alguien lo vuelva a encender,
+        y para entonces el silencio que lo motivó es historia antigua.
+        """
+        self._outbox.cancel_kind(KIND)
+
     async def send_due(self, now: datetime | None = None) -> None:
+        if not self._enabled():
+            return
         moment = now or self._now()
         for row in self._outbox.due(moment, kind=KIND):
             if not self._outbox.consume(row.id, moment):
@@ -99,6 +111,8 @@ class InterestFollowups:
 
     async def send_now(self, key: ContactKey) -> str:
         """The panel's "enviar seguimiento ahora" button, for one contact."""
+        if not self._enabled():
+            return "disabled"
         row = self._outbox.pending_interest_followup(key)
         if row is None:
             return "missing"

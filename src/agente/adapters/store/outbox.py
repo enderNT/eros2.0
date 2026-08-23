@@ -170,6 +170,16 @@ class SqliteOutboxRepository:
             (key.phone_number_id, key.contact_phone, kind),
         )
 
+    def cancel_kind(self, kind: str) -> None:
+        """Vaciar la cola de un tipo entero, para cuando se apaga esa conducta.
+
+        Apagar un aviso tiene que vaciar lo que ya estaba en cola, no sólo dejar
+        de encolar más. Si no, volver a encenderlo un mes después soltaría de
+        golpe los avisos que vencieron mientras estaba apagado — un "¿sigues por
+        ahí?" a alguien que se calló en marzo.
+        """
+        self._cancel("kind = ?", (kind,))
+
     def cancel_for_token(self, booking_token: str) -> None:
         self._cancel("booking_token = ?", (booking_token,))
 

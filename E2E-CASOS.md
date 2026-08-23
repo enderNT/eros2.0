@@ -405,6 +405,33 @@ consta ninguna cita.
 
 ---
 
+### C16 — El seguimiento tras el silencio, apagado
+
+**Qué se prueba.** Que la clínica pueda apagar el seguimiento de interés, y que apagado
+signifique *nada*, no "más tarde". Hasta ahora lo único que podía hacer quien no quisiera
+perseguir silencios era subir el plazo al máximo, que es esperar más, no apagarlo.
+
+**Cómo leerlo.** El interruptor se apaga **después** de armar el aviso, y ahí está el caso
+que puede fallar de verdad: no encolar cuando ya está apagado es fácil; que lo ya encolado
+no salga —ni al vencer, ni al volver a encender semanas después— es lo difícil.
+[`evals/casos/C16-seguimiento-apagado.md`](evals/casos/C16-seguimiento-apagado.md).
+
+---
+
+### C17 — El recordatorio previo a la cita, apagado
+
+**Qué se prueba.** El gemelo de C16 sobre el otro interruptor, más la vuelta atrás: apagar
+descarta la cola pero **no** la cita, así que volver a encender tiene que reconstruir el
+recordatorio de cada cita futura.
+
+**Cómo leerlo.** Dos fallos silenciosos acechan. Que el interruptor se lleve la cita por
+delante —un cancelador disfrazado de checkbox— y que encenderlo no reconstruya nada, con lo
+que todo el que agendó mientras estuvo apagado se queda sin aviso y nadie se entera hasta
+que alguien no se presenta.
+[`evals/casos/C17-recordatorio-apagado.md`](evals/casos/C17-recordatorio-apagado.md).
+
+---
+
 ## Dónde se ven los resultados## Dónde se ven los resultados
 
 Lo que las pruebas encuentran **no se apunta a mano aquí**. Se destila solo:
@@ -454,10 +481,14 @@ fricción o estado inconsistente. *Leve*: tono, forma, redacción.
 
 Barato y sin dependencias primero, caro y con estado real al final:
 
-**C10 → C8 → C6 → C12 → C15 → C1 → C2 → C7 → C11 → C13 → C3 → C14 → C9 → C4 → C5**
+**C10 → C8 → C6 → C12 → C15 → C1 → C16 → C2 → C7 → C11 → C13 → C3 → C14 → C9 → C17 → C4 → C5**
 
 C15 sube casi al principio porque no necesita precondición: es el único caso de
 cancelación que se monta sobre un contacto sin citas.
+
+C16 va pegado a C1 y C17 pegado a C4 a propósito: cada uno mide el apagado de la conducta
+que el caso anterior acaba de medir encendida, y leerlos seguidos ahorra tener que recordar
+cómo era la versión encendida.
 
 C13 va antes que C3 a propósito. Si el asistente cancela ante una duda, no hace falta
 seguir midiendo lo bien que cancela cuando se lo piden.

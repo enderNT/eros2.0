@@ -1,7 +1,8 @@
 import { useState } from "react";
 
 import { minuteLabel } from "../format";
-import type { MinuteSetting } from "../types";
+import type { ToggleableMinuteSetting } from "../types";
+import { BehaviourSwitch } from "./BehaviourSwitch";
 import { Hint } from "./Hint";
 
 /** Shortcuts for testing and for the values actually used day to day. */
@@ -18,11 +19,12 @@ const PRESETS: ReadonlyArray<[number, string]> = [
 ];
 
 interface Props {
-  setting: MinuteSetting;
+  setting: ToggleableMinuteSetting;
   onSave: (minutes: number) => Promise<boolean>;
+  onToggle: (enabled: boolean) => Promise<boolean>;
 }
 
-export function AppointmentReminderSettings({ setting, onSave }: Props) {
+export function AppointmentReminderSettings({ setting, onSave, onToggle }: Props) {
   const [draft, setDraft] = useState(String(setting.minutes));
   const minutes = Number(draft);
   const valid = Number.isInteger(minutes) && minutes >= setting.min && minutes <= setting.max;
@@ -38,6 +40,12 @@ export function AppointmentReminderSettings({ setting, onSave }: Props) {
         <strong>Recordatorio de cita</strong>
         <Hint text="Envía un recordatorio fijo antes de cada cita confirmada. Es un ajuste global. Al guardarlo, las citas futuras que todavía no reciben recordatorio se recalculan con este nuevo lapso." />
       </label>
+      <BehaviourSwitch
+        id="appointment-reminder-enabled"
+        enabled={setting.enabled}
+        what="ningún recordatorio"
+        onToggle={onToggle}
+      />
       <p className="subtle">
         Enviar{" "}
         <output id="appointment-reminder-value">
@@ -55,6 +63,7 @@ export function AppointmentReminderSettings({ setting, onSave }: Props) {
           max={setting.max}
           step={1}
           value={draft}
+          disabled={!setting.enabled}
           onChange={(event) => setDraft(event.target.value)}
         />
       </label>
@@ -64,13 +73,14 @@ export function AppointmentReminderSettings({ setting, onSave }: Props) {
             key={value}
             type="button"
             className="secondary"
+            disabled={!setting.enabled}
             onClick={() => setDraft(String(value))}
           >
             {label}
           </button>
         ))}
       </div>
-      {changed && (
+      {changed && setting.enabled && (
         <button className="global-save" type="button" onClick={() => void save()}>
           Guardar cambio global
         </button>

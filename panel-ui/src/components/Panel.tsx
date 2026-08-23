@@ -101,6 +101,13 @@ export function Panel() {
               { interest_followup: { ...state.interest_followup, minutes } },
             )
           }
+          onToggle={(enabled) =>
+            saveGlobal(
+              "/interest-followup-enabled",
+              { enabled },
+              { interest_followup: { ...state.interest_followup, enabled } },
+            )
+          }
         />
       </div>
 
@@ -112,6 +119,13 @@ export function Panel() {
               "/appointment-reminder-settings",
               { minutes },
               { appointment_reminder: { ...state.appointment_reminder, minutes } },
+            )
+          }
+          onToggle={(enabled) =>
+            saveGlobal(
+              "/appointment-reminder-enabled",
+              { enabled },
+              { appointment_reminder: { ...state.appointment_reminder, enabled } },
             )
           }
         />
@@ -130,6 +144,8 @@ export function Panel() {
 
       <ContactList
         contacts={state.contacts}
+        reminderEnabled={state.appointment_reminder.enabled}
+        followupEnabled={state.interest_followup.enabled}
         onMute={async (contact, muted, expiresIn) => {
           const payload = await call<{ mute: MuteState | null }>("/mute", {
             ...contactKey(contact),

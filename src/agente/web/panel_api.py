@@ -68,6 +68,10 @@ class MinutesBody(BaseModel):
     minutes: int
 
 
+class EnabledBody(BaseModel):
+    enabled: bool
+
+
 def _mutes(request: Request) -> SqliteMutesRepository:
     return SqliteMutesRepository(request.app.state.db)
 
@@ -85,6 +89,18 @@ def _booking_followup_minutes(request: Request) -> int:
 def _interest_followup_minutes(request: Request) -> int:
     return _runtime_settings(request).interest_followup_minutes(
         request.app.state.settings.interest_followup_minutes
+    )
+
+
+def _interest_followup_enabled(request: Request) -> bool:
+    return _runtime_settings(request).interest_followup_enabled(
+        request.app.state.settings.interest_followup_enabled
+    )
+
+
+def _appointment_reminder_enabled(request: Request) -> bool:
+    return _runtime_settings(request).appointment_reminder_enabled(
+        request.app.state.settings.appointment_reminder_enabled
     )
 
 
@@ -180,11 +196,13 @@ async def state(request: Request) -> dict[str, Any]:
             "minutes": _interest_followup_minutes(request),
             "min": MIN_INTEREST_FOLLOWUP_MINUTES,
             "max": MAX_INTEREST_FOLLOWUP_MINUTES,
+            "enabled": _interest_followup_enabled(request),
         },
         "appointment_reminder": {
             "minutes": _appointment_reminder_minutes(request),
             "min": MIN_APPOINTMENT_REMINDER_MINUTES,
             "max": MAX_APPOINTMENT_REMINDER_MINUTES,
+            "enabled": _appointment_reminder_enabled(request),
         },
         "contacts": contacts,
     }
@@ -269,6 +287,44 @@ async def interest_followup(request: Request, body: MinutesBody) -> dict[str, An
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"minutes": body.minutes}
+
+
+@router.post("/interest-followup-enabled", dependencies=[_guard])
+async def interest_followup_enabled(request: Request, body: EnabledBody) -> dict[str, Any]:
+    """Encender o apagar del todo el seguimiento tras el silencio.
+
+    Apagar vacía lo que ya estaba en cola. Es lo que espera quien mueve el
+    interruptor: "que no se le escriba a nadie", no "que no se le escriba a
+    quien se calle a partir de ahora". Volver a encender no resucita nada —
+    el siguiente mensaje del bot arma el aviso de quien corresponda.
+    """
+    _runtime_settings(request).set_interest_followup_enabled(body.enabled, datetime.now(UTC))
+    if not body.enabled:
+        request.app.state.interest_followups.drop_pending()
+    return {"enabled": body.enabled}
+
+
+@router.post("/appointment-reminder-enabled", dependencies=[_guard])
+async def appointment_reminder_enabled_route(request: Request, body: EnabledBody) -> dict[str, Any]:
+    """Encender o apagar el recordatorio previo a la cita.
+
+    Aparte del seguimiento de interés a propósito: son dos decisiones distintas.
+    Retomar a quien se calló es iniciativa de la clínica; recordar una cita que
+    ya existe es un servicio a quien la pidió, y hay clínicas que querrán lo
+    segundo sin lo primero.
+
+    A diferencia del otro, aquí encender sí reconstruye: la cita sigue ahí, así
+    que `reschedule_pending` vuelve a poner un recordatorio por cada cita futura,
+    incluidas las que se agendaron mientras estuvo apagado.
+    """
+    now = datetime.now(UTC)
+    _runtime_settings(request).set_appointment_reminder_enabled(body.enabled, now)
+    reminders = request.app.state.appointment_reminders
+    if body.enabled:
+        reminders.reschedule_pending(now)
+    else:
+        reminders.drop_pending()
+    return {"enabled": body.enabled}
 
 
 @router.post("/interest-followup-send", dependencies=[_guard])

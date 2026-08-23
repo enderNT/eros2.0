@@ -77,6 +77,10 @@ class Settings(BaseSettings):
     # momento y otro motivo que el de reserva, así que es otro ajuste.
     interest_followup_minutes: int = 60
     appointment_reminder_minutes: int = 1440
+    # Los dos avisos automáticos se pueden apagar desde el panel. Estos son sólo
+    # el valor de arranque: lo que mande es lo que haya guardado en `app_setting`.
+    interest_followup_enabled: bool = True
+    appointment_reminder_enabled: bool = True
     crisis_message: str
 
     # Logging

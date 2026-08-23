@@ -6,6 +6,8 @@ import { Hint } from "./Hint";
 
 interface Props {
   contact: Contact;
+  reminderEnabled: boolean;
+  followupEnabled: boolean;
   onMute: (muted: boolean, expiresIn: number | null) => Promise<void>;
   onReset: () => Promise<number>;
   onSendReminder: () => Promise<ReminderResult>;
@@ -21,6 +23,7 @@ const REMINDER_MESSAGE: Record<ReminderResult, { text: string; tone: "subtle" | 
   failed: { text: "No se pudo enviar. Revisa la conexión de WhatsApp.", tone: "error" },
   missing: { text: "No hay un recordatorio pendiente para enviar.", tone: "subtle" },
   already_sent: { text: "No hay un recordatorio pendiente para enviar.", tone: "subtle" },
+  disabled: { text: "Los recordatorios están apagados en los ajustes.", tone: "error" },
 };
 
 const FOLLOWUP_MESSAGE: Record<FollowupResult, { text: string; tone: "subtle" | "error" }> = {
@@ -33,10 +36,13 @@ const FOLLOWUP_MESSAGE: Record<FollowupResult, { text: string; tone: "subtle" | 
   failed: { text: "No se pudo enviar. Revisa la conexión de WhatsApp.", tone: "error" },
   missing: { text: "No hay un seguimiento pendiente para enviar.", tone: "subtle" },
   already_sent: { text: "No hay un seguimiento pendiente para enviar.", tone: "subtle" },
+  disabled: { text: "El seguimiento está apagado en los ajustes.", tone: "error" },
 };
 
 export function ContactControls({
   contact,
+  reminderEnabled,
+  followupEnabled,
   onMute,
   onReset,
   onSendReminder,
@@ -105,7 +111,7 @@ export function ContactControls({
         )}
       </div>
 
-      {contact.appointment && (
+      {contact.appointment && reminderEnabled && (
         <div className="form-action appointment-reminder-trigger">
           <strong>Recordatorio de cita</strong>
           <p className="subtle">
@@ -123,7 +129,7 @@ export function ContactControls({
         </div>
       )}
 
-      {!contact.appointment && (
+      {!contact.appointment && followupEnabled && (
         <div className="form-action appointment-reminder-trigger">
           <strong>Seguimiento de interés</strong>
           <p className="subtle">

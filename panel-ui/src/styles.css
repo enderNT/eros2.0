@@ -24,6 +24,9 @@ button.danger { background: #b42318; }
 .slider-stepper { display: grid; gap: 2px; color: #667085; font-size: .85rem; }
 .range-row select { width: 88px; }
 .slider-bounds { display: flex; justify-content: space-between; color: #667085; font-size: .75rem; }
+.behaviour-switch { margin: .35rem 0 .6rem; }
+.behaviour-switch label { display: inline-flex; align-items: center; gap: .35rem; font-weight: 600; }
+.behaviour-switch p { margin: .25rem 0 0; }
 .reminder-presets { display: flex; flex-wrap: wrap; gap: 8px; }
 .reminder-presets button { flex: 1 0 72px; }
 .reminder-minutes { display: grid; gap: 4px; color: #667085; font-size: .85rem; }

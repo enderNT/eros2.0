@@ -26,14 +26,26 @@ export interface MinuteSetting {
   max: number;
 }
 
+/**
+ * Un ajuste de plazo que además se puede apagar entero.
+ *
+ * No todos lo son: el seguimiento de reserva sigue siendo sólo un plazo. Los dos
+ * que sí — el seguimiento tras el silencio y el recordatorio previo a la cita —
+ * son los que el bot manda por iniciativa propia, y son justo los que una
+ * clínica puede querer que no salgan nunca.
+ */
+export interface ToggleableMinuteSetting extends MinuteSetting {
+  enabled: boolean;
+}
+
 export interface PanelState {
   phone_number_id: string;
   error: string | null;
   global_muted: boolean;
   number_muted: boolean;
   booking_followup: MinuteSetting;
-  interest_followup: MinuteSetting;
-  appointment_reminder: MinuteSetting;
+  interest_followup: ToggleableMinuteSetting;
+  appointment_reminder: ToggleableMinuteSetting;
   contacts: Contact[];
 }
 
@@ -46,7 +58,14 @@ export interface TraceRow {
 }
 
 /** What `send_now` reports back for a single contact's pending reminder. */
-export type ReminderResult = "sent" | "muted" | "failed" | "missing" | "already_sent";
+export type ReminderResult =
+  | "sent"
+  | "muted"
+  | "failed"
+  | "missing"
+  | "already_sent"
+  /** El interruptor global está apagado, así que el botón por contacto no manda. */
+  | "disabled";
 
 /**
  * Lo que devuelve el envío manual del seguimiento de interés.

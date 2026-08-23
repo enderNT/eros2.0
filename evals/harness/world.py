@@ -462,6 +462,26 @@ class World:
             expires_in=expires_in,
         )
 
+    async def set_interest_followup_enabled(self, enabled: bool) -> None:
+        """El interruptor del seguimiento tras el silencio, por la ruta del panel.
+
+        Por HTTP y no tocando `runtime_settings` a mano, al revés que los
+        sliders, porque aquí el interruptor hace dos cosas: guarda el ajuste y
+        vacía lo que ya estaba en cola. Un caso que sólo escribiera el ajuste
+        probaría media conducta y daría por bueno un apagado que deja avisos
+        vivos esperando a que alguien vuelva a encenderlo.
+        """
+        await self.panel("interest-followup-enabled", enabled=enabled)
+
+    async def set_reminder_enabled(self, enabled: bool) -> None:
+        """El interruptor del recordatorio previo a la cita, por la ruta del panel.
+
+        Separado del anterior a propósito: apagar los recordatorios no apaga el
+        seguimiento, ni al revés. Encenderlo sí reconstruye la cola, porque las
+        citas siguen ahí.
+        """
+        await self.panel("appointment-reminder-enabled", enabled=enabled)
+
     async def panel_state(self) -> dict[str, Any]:
         if not self.client.cookies.get("agente_panel"):
             await self.panel_login()

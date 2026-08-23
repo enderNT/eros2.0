@@ -57,7 +57,7 @@ def test_migrate_creates_every_table(db_conn):
 
 def test_migrate_records_the_applied_version(db_conn):
     rows = db_conn.execute("SELECT version FROM schema_version").fetchall()
-    assert [row["version"] for row in rows] == [1, 2, 3, 4, 5, 6, 7]
+    assert [row["version"] for row in rows] == [1, 2, 3, 4, 5, 6, 7, 8]
 
 
 def test_runtime_followup_setting_is_global_and_bounded(db_conn):

@@ -5,6 +5,9 @@ import { Hint } from "./Hint";
 
 interface Props {
   contacts: Contact[];
+  /** Los interruptores globales: apagados, el botón por contacto no tiene sentido. */
+  reminderEnabled: boolean;
+  followupEnabled: boolean;
   onMute: (contact: Contact, muted: boolean, expiresIn: number | null) => Promise<void>;
   onReset: (contact: Contact) => Promise<number>;
   onSendReminder: (contact: Contact) => Promise<ReminderResult>;
@@ -19,6 +22,8 @@ function StatusBadge({ status }: { status: string | null }) {
 
 export function ContactList({
   contacts,
+  reminderEnabled,
+  followupEnabled,
   onMute,
   onReset,
   onSendReminder,
@@ -49,6 +54,8 @@ export function ContactList({
           <Row
             key={contact.conversation_id}
             contact={contact}
+            reminderEnabled={reminderEnabled}
+            followupEnabled={followupEnabled}
             onMute={onMute}
             onReset={onReset}
             onSendReminder={onSendReminder}
@@ -62,6 +69,8 @@ export function ContactList({
 
 function Row({
   contact,
+  reminderEnabled,
+  followupEnabled,
   onMute,
   onReset,
   onSendReminder,
@@ -93,6 +102,8 @@ function Row({
           <td colSpan={3}>
             <ContactControls
               contact={contact}
+              reminderEnabled={reminderEnabled}
+              followupEnabled={followupEnabled}
               onMute={(muted, expiresIn) => onMute(contact, muted, expiresIn)}
               onReset={() => onReset(contact)}
               onSendReminder={() => onSendReminder(contact)}

@@ -28,6 +28,7 @@ el precio nunca recibió ninguno. Ahora existe un segundo seguimiento, el de
 | Ajuste | `booking_followup_minutes` | `interest_followup_minutes` |
 | Panel | *Seguimiento de reserva* | *Seguimiento de interés* |
 | Arnés | `set_followup_minutes` | `set_interest_followup_minutes` |
+| Se puede apagar | No | Sí — ver [C16](C16-seguimiento-apagado.md) |
 
 Hacen lo mismo mecánicamente y responden a cosas distintas. Un solo plazo para
 los dos obligaría a la clínica a tratar igual a quien abandonó una reserva y a

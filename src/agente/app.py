@@ -125,6 +125,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             minutes_before=lambda: runtime_settings.appointment_reminder_minutes(
                 cfg.appointment_reminder_minutes
             ),
+            enabled=lambda: runtime_settings.appointment_reminder_enabled(
+                cfg.appointment_reminder_enabled
+            ),
         )
         app.state.appointment_reminders = reminders
         # Covers appointments confirmed before this feature was deployed.
@@ -177,6 +180,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             channel=app.state.channel,
             delay_minutes=lambda: runtime_settings.interest_followup_minutes(
                 cfg.interest_followup_minutes
+            ),
+            enabled=lambda: runtime_settings.interest_followup_enabled(
+                cfg.interest_followup_enabled
             ),
         )
         app.state.interest_followups = interest

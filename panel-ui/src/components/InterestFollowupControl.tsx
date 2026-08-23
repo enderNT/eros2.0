@@ -1,14 +1,16 @@
 import { useState } from "react";
 
-import type { MinuteSetting } from "../types";
+import type { ToggleableMinuteSetting } from "../types";
+import { BehaviourSwitch } from "./BehaviourSwitch";
 import { Hint } from "./Hint";
 
 /** Slider granularities offered to the operator; UI only, never persisted. */
 const SLIDER_STEPS = [1, 2, 3, 5, 6, 9, 10, 15, 18, 30, 45, 90];
 
 interface Props {
-  setting: MinuteSetting;
+  setting: ToggleableMinuteSetting;
   onSave: (minutes: number) => Promise<boolean>;
+  onToggle: (enabled: boolean) => Promise<boolean>;
 }
 
 /**
@@ -19,7 +21,7 @@ interface Props {
  * distintas de la clínica: a quien abandonó una reserva se le escribe antes que
  * a quien sólo estaba mirando.
  */
-export function InterestFollowupControl({ setting, onSave }: Props) {
+export function InterestFollowupControl({ setting, onSave, onToggle }: Props) {
   const [draft, setDraft] = useState(setting.minutes);
   const [step, setStep] = useState(1);
   const changed = draft !== setting.minutes;
@@ -34,6 +36,12 @@ export function InterestFollowupControl({ setting, onSave }: Props) {
         <strong>Seguimiento de interés</strong>
         <Hint text="Para quien preguntó por la clínica y dejó de responder sin llegar a agendar. El bot escribe una sola vez después de este lapso, y no lo hace si la persona contesta antes, si ya tiene cita, o si la conversación pasó a una persona del equipo. El ajuste es global." />
       </label>
+      <BehaviourSwitch
+        id="interest-followup-enabled"
+        enabled={setting.enabled}
+        what="ningún seguimiento"
+        onToggle={onToggle}
+      />
       <p className="subtle">
         Esperar <output id="interest-followup-value">{draft}</output> min antes de escribir.
       </p>
@@ -50,6 +58,7 @@ export function InterestFollowupControl({ setting, onSave }: Props) {
             max={setting.max}
             step={step}
             value={draft}
+            disabled={!setting.enabled}
             onChange={(event) => setDraft(Number(event.target.value))}
           />
           <div className="slider-bounds">
@@ -73,7 +82,7 @@ export function InterestFollowupControl({ setting, onSave }: Props) {
           </select>
         </label>
       </div>
-      {changed && (
+      {changed && setting.enabled && (
         <button className="global-save" type="button" onClick={() => void save()}>
           Guardar cambio global
         </button>

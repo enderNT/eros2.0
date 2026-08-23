@@ -30,9 +30,7 @@ SIN_CITA = (
     " Díselo con claridad — no des por hecha una cita que no existe ni confirmes"
     " ninguna cancelación — y ofrécele agendar una o hablar con el equipo."
 )
-CANCELADA = (
-    "Cita cancelada: el horario de {label} quedó liberado. Confírmaselo al paciente."
-)
+CANCELADA = "Cita cancelada: el horario de {label} quedó liberado. Confírmaselo al paciente."
 
 
 def confirmar(label: str) -> str:

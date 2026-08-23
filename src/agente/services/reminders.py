@@ -48,14 +48,16 @@ class AppointmentReminders:
         channel: Channel,
         timezone: str,
         minutes_before: Callable[[], int],
+        enabled: Callable[[], bool] = lambda: True,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._outbox, self._appointments = outbox, appointments
         self._messages, self._mutes, self._channel = messages, mutes, channel
         self._timezone, self._minutes_before, self._now = ZoneInfo(timezone), minutes_before, now
+        self._enabled = enabled
 
     def schedule(self, key: ContactKey, event_id: str, slot_utc: datetime, now: datetime) -> None:
-        if slot_utc <= now:
+        if not self._enabled() or slot_utc <= now:
             return
         due_at = max(now, slot_utc - timedelta(minutes=self._minutes_before()))
         self._outbox.schedule_appointment_reminder(
@@ -67,7 +69,15 @@ class AppointmentReminders:
         )
 
     def reschedule_pending(self, now: datetime) -> None:
-        """Apply a global timing change to all future, unsent reminders."""
+        """Apply a global timing change to all future, unsent reminders.
+
+        Doubles as the way back from the off switch. Turning reminders off drops
+        the queued rows, so turning them back on has to rebuild one per future
+        appointment — otherwise every patient who booked while it was off would
+        silently never be reminded.
+        """
+        if not self._enabled():
+            return
         for appointment in self._appointments.scheduled():
             if appointment.slot_utc <= now:
                 continue
@@ -82,16 +92,28 @@ class AppointmentReminders:
             )
 
     async def send_due(self, now: datetime | None = None) -> None:
+        if not self._enabled():
+            return
         moment = now or self._now()
         for row in self._outbox.due(moment, kind="appointment_reminder"):
             await self._send(row, moment)
 
     async def send_now(self, key: ContactKey) -> str:
         """Send the pending reminder for exactly this contact, for local testing."""
+        if not self._enabled():
+            return "disabled"
         row = self._outbox.pending_appointment_reminder(key)
         if row is None:
             return "missing"
         return await self._send(row, self._now())
+
+    def drop_pending(self) -> None:
+        """Vaciar la cola de recordatorios, para cuando la clínica los apaga.
+
+        Se pierde el `due_at` calculado, no la cita: `reschedule_pending` los
+        reconstruye desde `appointments` en cuanto se vuelvan a encender.
+        """
+        self._outbox.cancel_kind("appointment_reminder")
 
     async def _send(self, row: OutboxRow, now: datetime) -> str:
         event_id = row.appointment_event_id

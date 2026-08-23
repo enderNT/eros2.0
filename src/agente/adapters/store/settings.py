@@ -73,6 +73,18 @@ class SqliteRuntimeSettingsRepository:
         except sqlite3.Error as exc:
             raise StoreError(str(exc)) from exc
 
+    def interest_followup_enabled(self, default: bool) -> bool:
+        return self._flag("interest_followup_enabled", default)
+
+    def set_interest_followup_enabled(self, enabled: bool, now: datetime) -> None:
+        self._set_flag("interest_followup_enabled", enabled, now)
+
+    def appointment_reminder_enabled(self, default: bool) -> bool:
+        return self._flag("appointment_reminder_enabled", default)
+
+    def set_appointment_reminder_enabled(self, enabled: bool, now: datetime) -> None:
+        self._set_flag("appointment_reminder_enabled", enabled, now)
+
     def appointment_reminder_minutes(self, default: int) -> int:
         try:
             row = self._conn.execute(
@@ -94,6 +106,33 @@ class SqliteRuntimeSettingsRepository:
                     " appointment_reminder_minutes = excluded.appointment_reminder_minutes,"
                     " updated_at = excluded.updated_at",
                     (minutes, to_utc_iso(now)),
+                )
+        except sqlite3.Error as exc:
+            raise StoreError(str(exc)) from exc
+
+    def _flag(self, column: str, default: bool) -> bool:
+        """Read one on/off switch.
+
+        `column` is never user input — it comes from the four call sites above —
+        so interpolating it is safe here and buys one helper instead of four
+        near-identical bodies.
+        """
+        try:
+            row = self._conn.execute(
+                f"SELECT {column} FROM app_setting WHERE id = 1"  # noqa: S608
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise StoreError(str(exc)) from exc
+        return bool(row[column]) if row else default
+
+    def _set_flag(self, column: str, enabled: bool, now: datetime) -> None:
+        try:
+            with self._conn:
+                self._conn.execute(
+                    f"INSERT INTO app_setting (id, booking_followup_minutes, {column},"  # noqa: S608
+                    " updated_at) VALUES (1, 90, ?, ?) ON CONFLICT(id) DO UPDATE SET"
+                    f" {column} = excluded.{column}, updated_at = excluded.updated_at",
+                    (int(enabled), to_utc_iso(now)),
                 )
         except sqlite3.Error as exc:
             raise StoreError(str(exc)) from exc

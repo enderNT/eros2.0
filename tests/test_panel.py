@@ -4,8 +4,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from agente.adapters.store.contacts import SqliteContactsRepository
 from agente.adapters.store.messages import SqliteMessagesRepository
 from agente.adapters.store.mutes import SqliteMutesRepository
+from agente.adapters.store.outbox import SqliteOutboxRepository
 from agente.adapters.store.settings import SqliteRuntimeSettingsRepository
 from agente.app import create_app
 from agente.domain.contacts import ContactKey, mask_phone
@@ -88,7 +90,12 @@ def test_state_lists_one_row_per_contact_with_a_masked_phone(settings):
     assert state["global_muted"] is False
     assert state["number_muted"] is False
     assert state["booking_followup"] == {"minutes": 90, "min": 0, "max": 90}
-    assert state["appointment_reminder"] == {"minutes": 1440, "min": 1, "max": 10080}
+    assert state["appointment_reminder"] == {
+        "minutes": 1440,
+        "min": 1,
+        "max": 10080,
+        "enabled": True,
+    }
     (contact,) = state["contacts"]
     assert contact["name"] == "Paciente"
     assert contact["masked_phone"] == mask_phone(CONTACT)
@@ -169,7 +176,12 @@ def test_panel_state_exposes_both_follow_up_settings(settings):
     with TestClient(create_app(settings)) as client:
         _login(client)
         state = client.get("/admin/api/state").json()
-        assert state["interest_followup"] == {"minutes": 60, "min": 1, "max": 90}
+        assert state["interest_followup"] == {
+            "minutes": 60,
+            "min": 1,
+            "max": 90,
+            "enabled": True,
+        }
         assert state["booking_followup"]["max"] == 90
         assert state["interest_followup"] is not state["booking_followup"]
 
@@ -308,3 +320,54 @@ def test_logout_drops_the_session(settings):
         client.post("/admin/api/logout")
         assert client.get("/admin/api/session").json() == {"authed": False}
         assert client.get("/admin/api/state").status_code == 401
+
+
+def test_the_two_switches_are_independent_routes(settings):
+    """Cada aviso tiene su interruptor: apagar uno deja el otro encendido."""
+    with TestClient(create_app(settings)) as client:
+        _login(client)
+        assert client.post(
+            "/admin/api/interest-followup-enabled", json={"enabled": False}
+        ).json() == {"enabled": False}
+
+        state = client.get("/admin/api/state").json()
+        assert state["interest_followup"]["enabled"] is False
+        assert state["appointment_reminder"]["enabled"] is True
+
+        assert client.post(
+            "/admin/api/appointment-reminder-enabled", json={"enabled": False}
+        ).json() == {"enabled": False}
+        assert client.post(
+            "/admin/api/interest-followup-enabled", json={"enabled": True}
+        ).json() == {"enabled": True}
+
+        state = client.get("/admin/api/state").json()
+        assert state["interest_followup"]["enabled"] is True
+        assert state["appointment_reminder"]["enabled"] is False
+
+
+def test_turning_a_follow_up_off_empties_what_was_already_queued(settings):
+    """Apagar borra la cola, no sólo deja de encolar.
+
+    Si la fila sobreviviera, volver a encender el interruptor un mes después
+    soltaría de golpe un "¿sigues por ahí?" a quien se calló en marzo.
+    """
+    key = ContactKey(settings.kapso_phone_number_id, "+525512345678")
+    with TestClient(create_app(settings)) as client:
+        _login(client)
+        db = client.app.state.db
+        SqliteContactsRepository(db).ensure_contact(key, datetime.now(UTC))
+        client.app.state.interest_followups.schedule_from_outbound(
+            key, "lo que dijo el bot", datetime.now(UTC)
+        )
+        outbox = SqliteOutboxRepository(db)
+        assert outbox.pending_interest_followup(key) is not None
+
+        client.post("/admin/api/interest-followup-enabled", json={"enabled": False})
+        assert outbox.pending_interest_followup(key) is None
+
+        # Y apagado tampoco vuelve a armarse por mucho que el bot siga hablando.
+        client.app.state.interest_followups.schedule_from_outbound(
+            key, "otra respuesta", datetime.now(UTC)
+        )
+        assert outbox.pending_interest_followup(key) is None
