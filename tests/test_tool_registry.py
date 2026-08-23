@@ -5,9 +5,12 @@ import pytest
 from agente.adapters.store.appointments import SqliteAppointmentsRepository
 from agente.adapters.store.booking_tokens import SqliteBookingTokensRepository
 from agente.adapters.store.contacts import SqliteContactsRepository
+from agente.adapters.store.messages import SqliteMessagesRepository
+from agente.adapters.store.outbox import SqliteOutboxRepository
 from agente.domain.contacts import ContactKey
 from agente.domain.errors import CalendlyError
-from agente.ports.calendar import CalendarSlot
+from agente.ports.calendar import Booking, CalendarSlot
+from agente.services.booking import BookingService
 from agente.services.knowledge import Knowledge, Section
 from agente.tools.registry import CALENDAR_DOWN, UNKNOWN_SLOT, build_tools
 
@@ -22,17 +25,31 @@ SLOT = CalendarSlot(
 
 
 class FakeCalendar:
-    def __init__(self, slots=(SLOT,), fail=False):
-        self.slots, self.fail, self.booked = list(slots), fail, []
+    def __init__(self, slots=(SLOT,), fail=False, fail_book=False):
+        self.slots, self.fail, self.fail_book = list(slots), fail, fail_book
+        self.booked, self.canceled = [], []
 
     async def availability(self, _start, _end):
         if self.fail:
             raise CalendlyError("down")
         return self.slots
 
+    async def book(self, slot, *, name, email, timezone, phone):
+        if self.fail_book:
+            raise CalendlyError("down")
+        self.booked.append((slot.start_utc, name, email, phone))
+        return Booking("event-1", "invitee-1", slot.start_utc)
+
+    async def cancel(self, event_id, *, reason=""):
+        self.canceled.append(event_id)
+
     async def create_invitee(self, slot, name, email):
-        self.booked.append((slot, name, email))
         return "event-1"
+
+
+class SilentChannel:
+    async def send_text(self, *_args, **_kwargs) -> str:
+        return "out-1"
 
 
 @pytest.fixture()
@@ -43,8 +60,18 @@ def tools(db_conn, mutes):
             knowledge=Knowledge("guia", [Section("Precios y formas de pago", "$1,000 MXN")]),
             mutes=mutes,
             calendar=calendar or FakeCalendar(),
-            appointments=SqliteAppointmentsRepository(db_conn),
-            booking_tokens=SqliteBookingTokensRepository(db_conn),
+            booking=BookingService(
+                tokens=SqliteBookingTokensRepository(db_conn),
+                appointments=SqliteAppointmentsRepository(db_conn),
+                contacts=SqliteContactsRepository(db_conn),
+                messages=SqliteMessagesRepository(db_conn),
+                outbox=SqliteOutboxRepository(db_conn),
+                channel=SilentChannel(),
+                calendar=calendar or FakeCalendar(),
+                invitee_email="citas@clinica.test",
+                timezone="America/Mexico_City",
+                now=lambda: NOW,
+            ),
             key=KEY,
             timezone="America/Mexico_City",
             now=lambda: NOW,
@@ -56,7 +83,13 @@ def tools(db_conn, mutes):
 def test_every_defined_tool_has_a_handler(tools):
     definitions, handlers = tools()
     assert {item["name"] for item in definitions} == set(handlers)
-    assert set(handlers) == {"buscar_wiki", "ver_horarios", "agendar_cita", "escalar_a_humano"}
+    assert set(handlers) == {
+        "buscar_wiki",
+        "ver_horarios",
+        "agendar_cita",
+        "cancelar_cita",
+        "escalar_a_humano",
+    }
 
 
 @pytest.mark.asyncio
@@ -67,14 +100,38 @@ async def test_availability_is_listed_with_a_bookable_identifier(tools):
 
 
 @pytest.mark.asyncio
-async def test_booking_hands_over_the_slot_link_and_books_nothing(tools, db_conn):
+async def test_booking_reserves_the_slot_and_records_the_appointment(tools, db_conn):
     calendar = FakeCalendar()
     _, handlers = tools(calendar)
     result = await handlers["agendar_cita"]({"inicio": SLOT.start_utc.isoformat()})
-    assert SLOT.booking_url in result
-    assert "NO está agendada" in result
-    assert SqliteAppointmentsRepository(db_conn).for_contact(KEY) == []
-    assert not calendar.booked
+    assert "agendada y confirmada" in result
+    filas = SqliteAppointmentsRepository(db_conn).for_contact(KEY)
+    assert [fila.slot_utc for fila in filas] == [SLOT.start_utc]
+    assert calendar.booked and calendar.booked[0][0] == SLOT.start_utc
+
+
+@pytest.mark.asyncio
+async def test_the_patient_phone_is_what_reaches_the_calendar(tools):
+    """Reserving ourselves means we set the number, instead of checking it after."""
+    calendar = FakeCalendar()
+    _, handlers = tools(calendar)
+    await handlers["agendar_cita"]({"inicio": SLOT.start_utc.isoformat()})
+    assert calendar.booked[0][3] == KEY.contact_phone
+
+
+@pytest.mark.asyncio
+async def test_cancelling_needs_a_second_call_with_confirmation(tools):
+    calendar = FakeCalendar()
+    _, handlers = tools(calendar)
+    await handlers["agendar_cita"]({"inicio": SLOT.start_utc.isoformat()})
+
+    primera = await handlers["cancelar_cita"]({})
+    assert "NO se ha cancelado nada" in primera
+    assert not calendar.canceled
+
+    segunda = await handlers["cancelar_cita"]({"confirmado": True})
+    assert "cancelada" in segunda.lower()
+    assert calendar.canceled == ["event-1"]
 
 
 @pytest.mark.asyncio
@@ -96,6 +153,15 @@ async def test_calendar_failure_degrades_instead_of_raising(tools):
     _, handlers = tools(FakeCalendar(fail=True))
     assert await handlers["ver_horarios"]({}) == CALENDAR_DOWN
     assert await handlers["agendar_cita"]({"inicio": SLOT.start_utc.isoformat()}) == CALENDAR_DOWN
+
+
+@pytest.mark.asyncio
+async def test_a_booking_failure_never_reads_as_a_confirmed_appointment(tools, db_conn):
+    """The calendar answering badly must not become "tu cita quedó confirmada"."""
+    _, handlers = tools(FakeCalendar(fail_book=True))
+    resultado = await handlers["agendar_cita"]({"inicio": SLOT.start_utc.isoformat()})
+    assert resultado == CALENDAR_DOWN
+    assert SqliteAppointmentsRepository(db_conn).for_contact(KEY) == []
 
 
 @pytest.mark.asyncio

@@ -36,7 +36,7 @@ class FakeChannel:
 
 @pytest.fixture()
 def booking(db_conn, contacts, messages):
-    def _make(channel=None, address="", reminders=None):
+    def _make(channel=None, address="", reminders=None, phone_number_id=""):
         return BookingService(
             tokens=SqliteBookingTokensRepository(db_conn),
             appointments=SqliteAppointmentsRepository(db_conn),
@@ -45,6 +45,7 @@ def booking(db_conn, contacts, messages):
             outbox=SqliteOutboxRepository(db_conn),
             channel=channel or FakeChannel(),
             reminders=reminders,
+            phone_number_id=phone_number_id,
             timezone="America/Mexico_City",
             address=address,
             now=lambda: NOW,
@@ -63,9 +64,7 @@ def _created(token: str = "tok-1", event: str = EVENT) -> dict:
         "name": "Ana",
         "email": "ana@example.com",
         "tracking": {"utm_content": token},
-        "questions_and_answers": [
-            {"question": "Número de teléfono", "answer": "55 1234 5678"}
-        ],
+        "questions_and_answers": [{"question": "Número de teléfono", "answer": "55 1234 5678"}],
         "scheduled_event": {"start_time": "2026-08-18T17:00:00Z"},
     }
 
@@ -208,3 +207,60 @@ async def test_an_unrelated_event_does_nothing(db_conn, booking):
     channel = FakeChannel()
     await booking(channel).handle("invitee_no_show.created", _created())
     assert channel.sent == []
+
+
+# --- reagendado hecho por la clínica, sin token nuestro -----------------------
+
+
+def _rescheduled(phone: str) -> dict:
+    """`invitee.created` como lo emite Calendly cuando reagenda el anfitrión."""
+    return {
+        "event": "https://api.calendly.com/scheduled_events/movido",
+        "name": "Paciente",
+        "email": "citas@clinica.test",
+        "tracking": {"utm_content": ""},
+        "questions_and_answers": [{"question": "Numero de telefono", "answer": phone}],
+        "scheduled_event": {"start_time": SLOT.isoformat().replace("+00:00", "Z")},
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_host_reschedule_is_attributed_by_the_phone_we_wrote(booking, contacts, db_conn):
+    """We wrote that number into Calendly ourselves, so reading it back is not guessing."""
+    _issue(db_conn)
+    channel = FakeChannel()
+    service = booking(channel=channel, phone_number_id=KEY.phone_number_id)
+    await service.handle("invitee.created", _created())  # la cita que luego se mueve
+    await service.handle("invitee.canceled", {"event": EVENT})
+
+    await service.handle("invitee.created", _rescheduled(KEY.contact_phone))
+
+    vigentes = [
+        row
+        for row in SqliteAppointmentsRepository(db_conn).for_contact(KEY)
+        if row.status == "scheduled"
+    ]
+    assert [row.slot_utc for row in vigentes] == [SLOT]
+    assert any("mover tu cita" in body for _to, body in channel.sent)
+
+
+@pytest.mark.asyncio
+async def test_a_booking_from_an_unknown_number_is_still_discarded(booking, contacts, db_conn):
+    """An unknown number booked from the public page: not ours to confirm.
+
+    The bar is a contact with a profile — somebody we have actually booked for.
+    Attributing anything else would confirm a stranger's appointment to a patient.
+    """
+    _issue(db_conn)
+    service = booking(phone_number_id=KEY.phone_number_id)
+    await service.handle("invitee.created", _created())
+    await service.handle("invitee.canceled", {"event": EVENT})
+
+    await service.handle("invitee.created", _rescheduled("+525599990000"))
+
+    vigentes = [
+        row
+        for row in SqliteAppointmentsRepository(db_conn).for_contact(KEY)
+        if row.status == "scheduled"
+    ]
+    assert vigentes == []

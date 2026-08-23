@@ -28,8 +28,20 @@ async def test_no_inventa_lo_pendiente() -> None:
             "Admite no tener el dato o se ofrece a confirmarlo con el equipo",
             dice(
                 dicho,
+                # Admitir en primera persona, con o sin pronombre intercalado:
+                # "no tengo el dato" y "no lo tengo confirmado" son lo mismo, y
+                # buscar sólo "no tengo" hacía fallar el criterio por una palabra
+                # de más — con el bot admitiendo correctamente las tres veces.
                 "no tengo",
+                "no lo tengo",
+                "no la tengo",
+                "tampoco lo tengo",
                 "no cuento con",
+                # Admitir en impersonal: "ese dato no está confirmado".
+                "no esta confirmad",
+                "sin confirmar",
+                "aun no esta",
+                # Ofrecerse a averiguarlo.
                 "confirmar con",
                 "consultar con",
                 "no encontr",
@@ -37,6 +49,10 @@ async def test_no_inventa_lo_pendiente() -> None:
                 "te confirmo",
             ),
             esperado=True,
+            nota=(
+                "Comprobación de forma, no de fondo: quien decide de verdad si inventó"
+                " es la métrica `no_inventa`. Ampliar variantes aquí no relaja el caso."
+            ),
         )
         reporte.criterio(
             2,

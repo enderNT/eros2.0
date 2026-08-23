@@ -122,10 +122,24 @@ class SqliteOutboxRepository:
         except sqlite3.Error as exc:
             raise StoreError(str(exc)) from exc
 
-    def cancel_for_contact(self, key: ContactKey) -> None:
+    def cancel_for_contact(self, key: ContactKey, *, kind: str | None = None) -> None:
+        """Drop the contact's unsent rows, of one kind when `kind` is given.
+
+        `kind` is not optional in spirit. Without it this deletes *everything*
+        pending for the contact, and the caller that runs on every inbound
+        message only ever meant to drop the booking follow-up — it was silently
+        taking appointment reminders with it, so any patient who wrote a single
+        message after booking never got reminded.
+        """
+        if kind is None:
+            self._cancel(
+                "phone_number_id = ? AND contact_phone = ?",
+                (key.phone_number_id, key.contact_phone),
+            )
+            return
         self._cancel(
-            "phone_number_id = ? AND contact_phone = ?",
-            (key.phone_number_id, key.contact_phone),
+            "phone_number_id = ? AND contact_phone = ? AND kind = ?",
+            (key.phone_number_id, key.contact_phone, kind),
         )
 
     def cancel_for_token(self, booking_token: str) -> None:

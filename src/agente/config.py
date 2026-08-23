@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     calendly_location_value: str = ""
     calendly_scheduling_link: str = ""
     calendly_signing_key: str = ""
+    # Calendly requires an invitee email on every booking. Reserving on the
+    # patient's behalf means we supply it, and asking the patient for theirs adds
+    # a turn of friction to collect an address nobody reads: the confirmation
+    # goes out over WhatsApp. One clinic address for every booking is the whole
+    # answer — and it also means the patient never receives Calendly's own mail,
+    # so nobody reschedules from a link behind our back (see C05).
+    calendly_invitee_email: str = ""
 
     # Storage
     db_path: Path

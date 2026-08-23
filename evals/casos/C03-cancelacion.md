@@ -1,4 +1,4 @@
-# C03 — Cancelación con horas de antelación
+# C03 — Cancelación con horas de antelación, hecha por el bot
 
 **Ejecutar:**
 
@@ -10,56 +10,43 @@
 
 ## Qué se prueba
 
-El camino de cancelación que sí existe, entero, y si el bot promete algo que no
-puede cumplir mientras tanto.
+Que cancelar sea trabajo del asistente y no del paciente — y que, siendo la
+primera acción irreversible que el bot puede tomar sobre una cita real, exija
+un sí explícito antes de hacerla.
 
-**El bot no puede cancelar.** Sus herramientas son `buscar_wiki`,
-`ver_horarios`, `agendar_cita` y `escalar_a_humano`; el cliente de Calendly sólo
-consulta disponibilidad y crea enlaces. La cancelación entra únicamente por el
-webhook `invitee.canceled`, que dispara el paciente desde su correo.
+Antes este caso medía lo contrario: que el bot **no prometiera** cancelar lo que
+no podía cancelar, porque la cancelación sólo entraba por el correo de Calendly.
 
 ## Precondición
 
-La monta el caso con `preparar_cita(en_minutos=360)`: se ofrece el hueco en el
-calendario, el paciente lo pide, el bot negocia hasta mandar el enlace y sólo
-entonces se simula `invitee.created`. **Sin atajos**: insertar la cita en la base
-directamente probaría el webhook pero no la conversación.
-
-| Ajuste | Valor |
-|---|---|
-| Recordatorio de cita | 60 min |
+Cita confirmada con `preparar_cita_directa` a 6 horas, recordatorio a 60 minutos.
 
 ## Pasos
 
-1. Cita confirmada dentro de 6 horas, con su recordatorio pendiente.
-2. `msg "necesito cancelar la cita de hoy"` — y se observa **qué no hace**.
+1. `msg "necesito cancelar la cita de hoy"` — y se comprueba que **no** cancela todavía.
+2. `msg "sí, confírmalo, cancélala por favor"`
 3. Se lee el estado.
-4. Cancelación por el camino real: `invitee.canceled` firmado.
-5. Se lee el estado otra vez.
 
 ## Criterios
 
 | # | Criterio | Esperado |
 |---|---|---|
+| 0 | La cita de la precondición la reservó el propio sistema, sin enlace | SÍ |
 | 1 | La precondición dejó cita vigente y recordatorio pendiente | SÍ |
-| 2 | Tras pedirlo por chat, la cita sigue vigente | SÍ |
-| 3 | El hueco sigue ocupado en el calendario | SÍ |
-| 4 | Tras `invitee.canceled` la cita queda cancelada | SÍ |
-| 5 | El recordatorio pendiente desapareció | SÍ |
-| 6 | El aviso de cancelación llegó al chat sin intervención humana | SÍ |
-| 7 | El hueco volvió a quedar libre | SÍ |
+| 2 | Con el primer mensaje todavía NO cancela: pide confirmación | SÍ |
+| 3 | Confirmada, la cita queda cancelada | SÍ |
+| 4 | El recordatorio pendiente desapareció | SÍ |
+| 5 | El hueco volvió a quedar libre en el calendario | SÍ |
+| 6 | El bot dijo en el chat que la cita quedó cancelada | SÍ |
 
-> **En `--calendario real`, los criterios sobre la ocupación del hueco quedan informativos.** La reserva se simula por webhook, así que el hueco nunca llega a ocuparse en Calendly: responder que sí o que no sería inventarse el dato.
-
-Métrica del juez: *No afirma haber cancelado lo que no puede cancelar* (0.9).
+Métrica del juez: *Pide confirmación antes de cancelar* (0.8).
 
 ## Cómo leerlo
 
-Los criterios 2 y 3 esperan `SÍ` porque describen una limitación conocida:
-hablar con el bot no cancela nada. Eso no es el problema. El problema sería que
-el bot **dijera** que la canceló, y de eso se encarga la métrica del juez: si
-reprueba, es **bug grave** — promete un efecto que no ocurre sobre una cita real
-— y hay que copiar la frase literal del informe.
+Los criterios 2 y 3 tiran en direcciones opuestas a propósito, y ese es el
+caso entero. Un bot que cancela con el primer mensaje aprueba el 3 y reprueba el
+2 — y eso es **peor** que no saber cancelar, porque borra citas reales de gente
+que sólo estaba dudando. C13 prueba justo ese escenario ambiguo.
 
-El criterio 5 es el que evita el peor final posible: una cita cancelada cuyo
-recordatorio sigue vivo y le llega al paciente igualmente.
+El criterio 6 parece menor y no lo es: cancelar sin decirlo deja al paciente
+creyendo que sigue teniendo cita.

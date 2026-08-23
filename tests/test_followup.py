@@ -98,3 +98,32 @@ async def test_confirmed_appointment_suppresses_the_followup(db_conn, followups)
 
     await service.send_due(NOW + timedelta(hours=2))
     assert channel.sent == []
+
+
+@pytest.mark.asyncio
+async def test_an_inbound_message_does_not_take_the_appointment_reminder_with_it(db_conn):
+    """Regression: `on_inbound` runs on every message and used to wipe everything.
+
+    The follow-up is meant to die when the patient writes back. The appointment
+    reminder is not — and an unscoped delete meant one message after booking left
+    the patient with no reminder at all, silently.
+    """
+    outbox = SqliteOutboxRepository(db_conn)
+    now = datetime(2026, 8, 20, 12, tzinfo=UTC)
+    slot = now + timedelta(hours=5)
+    outbox.schedule_booking_followup(KEY, "tok-1", slot, "¿pudiste agendar?", now)
+    outbox.schedule_appointment_reminder(KEY, "event-1", slot, "recordatorio", slot)
+
+    BookingFollowups(
+        outbox=outbox,
+        booking_tokens=SqliteBookingTokensRepository(db_conn),
+        appointments=SqliteAppointmentsRepository(db_conn),
+        messages=SqliteMessagesRepository(db_conn),
+        mutes=SqliteMutesRepository(db_conn),
+        channel=FakeChannel(),
+        timezone="America/Mexico_City",
+        now=lambda: now,
+    ).cancel_for_contact(KEY)
+
+    assert outbox.pending_appointment_reminder(KEY) is not None
+    assert not [row for row in outbox.due(slot, kind="booking_followup")]

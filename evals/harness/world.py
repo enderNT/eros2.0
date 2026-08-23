@@ -41,6 +41,7 @@ from agente.adapters.store.contacts import SqliteContactsRepository
 from agente.adapters.store.mutes import SqliteMutesRepository
 from agente.config import load_settings
 from agente.domain.contacts import ContactKey
+from agente.domain.scheduling import Slot, slot_label
 
 from .calendario import CalendarioFalso, CalendlyEnVivo, crear_calendario, modo_configurado
 from .fakes import RecordingChannel
@@ -91,6 +92,22 @@ class Pending:
     @property
     def sent(self) -> bool:
         return self.sent_at is not None
+
+
+@dataclass(frozen=True, slots=True)
+class Reserva:
+    """Cómo acabó existiendo la cita de una precondición.
+
+    `por_el_sistema` es el dato que separa el mundo viejo del nuevo: `True` si la
+    cita la creó `agendar_cita` durante la conversación, `False` si el arnés tuvo
+    que simular el enlace de Calendly porque el sistema no reservó solo. Los
+    casos lo publican como criterio en vez de reventar: una precondición que no
+    se cumple es un hallazgo, no un error del arnés.
+    """
+
+    event_uri: str
+    slot_utc: datetime
+    por_el_sistema: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -279,15 +296,8 @@ class World:
         tiempos a partir de ese horario.
         """
         objetivo = await self.calendar.elegir_hueco(en_minutos)
-        zona = ZoneInfo(self.settings.calendly_timezone)
-        local = objetivo.astimezone(zona)
-        cuando = (
-            f"hoy a las {local:%H:%M}"
-            if local.date() == datetime.now(UTC).astimezone(zona).date()
-            else f"el {local:%d/%m} a las {local:%H:%M}"
-        )
         await self.say(
-            f"hola, quiero agendar la cita de valoración {cuando},"
+            f"hola, quiero agendar la cita de valoración {self.frase_horario(objetivo)},"
             " ¿me pasas el enlace para reservarla?"
         )
         afirmaciones = [
@@ -309,6 +319,71 @@ class World:
         token, slot = emitidos[0]
         uri = await self.book(token=token, slot=slot)
         return uri, slot
+
+    def frase_horario(self, slot_utc: datetime) -> str:
+        """Cómo pide un paciente un horario concreto: **con las mismas palabras
+        que usa el bot para ofrecerlo**.
+
+        Usa `slot_label`, que es exactamente la función con la que `ver_horarios`
+        etiqueta cada hueco. Eso no es elegancia, es lo único que funciona: si el
+        arnés dice "el 22/08 a las 20:21" y el bot ha listado ese mismo hueco como
+        "hoy, 8:21 p. m.", el modelo no reconoce su propio horario y la
+        conversación se va en aclarar fechas. Se probaron las dos formas y cada
+        una rompía un caso distinto; la etiqueta compartida no rompe ninguno,
+        porque no hay dos vocabularios que reconciliar.
+        """
+        zona = ZoneInfo(self.settings.calendly_timezone)
+        return slot_label(Slot(slot_utc, slot_utc), zona, datetime.now(UTC))
+
+    async def preparar_cita_directa(self, *, en_minutos: int, max_turnos: int = 6) -> Reserva:
+        """Precondición de los casos que esperan que el bot reserve él mismo.
+
+        Igual que `preparar_cita`, pero sin dar por hecho el enlace: tras cada
+        turno mira si ya hay cita en la base. Si la hay, la reservó el sistema y
+        eso es lo que estos casos quieren medir.
+
+        Si el sistema no reserva pero sí emite un token, **no revienta**: cae al
+        flujo de enlace, monta la cita igual y lo marca en `por_el_sistema`. Esa
+        tolerancia es deliberada. Mientras `agendar_cita` siga mandando enlaces,
+        estos casos tienen que poder ejecutarse y medir todo lo demás — qué dice
+        el bot, si duplica citas, si avisa — en vez de morir todos con el mismo
+        error de precondición y no enseñar nada.
+        """
+        objetivo = await self.calendar.elegir_hueco(en_minutos)
+        await self.say(
+            f"hola, quiero agendar la cita de valoración {self.frase_horario(objetivo)}, por favor"
+        )
+        afirmaciones = [
+            "sí, ese horario me sirve, agéndamelo",
+            "sí, por favor, resérvamelo",
+            "sí, adelante",
+        ]
+        for intento in range(max_turnos):
+            reservada = self._cita_vigente()
+            if reservada is not None:
+                return Reserva(reservada.event_uri, reservada.slot_utc, True)
+            if self.tokens():
+                break
+            await self.say(afirmaciones[min(intento, len(afirmaciones) - 1)])
+
+        reservada = self._cita_vigente()
+        if reservada is not None:
+            return Reserva(reservada.event_uri, reservada.slot_utc, True)
+
+        emitidos = self.tokens()
+        if not emitidos:
+            raise AssertionError(
+                f"el bot ni reservó ni mandó enlace en {max_turnos} turnos:"
+                " no se puede montar la precondición del caso.\n"
+                f"conversación:\n{self.transcript()}"
+            )
+        token, slot = emitidos[0]
+        uri = await self.book(token=token, slot=slot)
+        return Reserva(uri, slot, False)
+
+    def _cita_vigente(self) -> Appointment | None:
+        vigentes = self.state().scheduled
+        return vigentes[0] if vigentes else None
 
     async def cancel(self, event_uri: str | None = None) -> None:
         """`invitee.canceled`: el único camino que hoy libera un hueco."""
@@ -530,6 +605,10 @@ async def world(name: str, *, calendario: str | None = None, **overrides: Any):
         "calendly_signing_key": CALENDLY_SIGNING_KEY,
         # Que nada venza solo: los vencimientos los dispara el test.
         "booking_followup_poll_seconds": 3600.0,
+        # El correo con el que se reserva. Fijo aquí y no leído de `.env` para
+        # que un caso no dependa de cómo tenga configurada su clínica quien lo
+        # ejecute; el doble lo ignora y Calendly real sólo lo necesita presente.
+        "calendly_invitee_email": "evals@example.com",
     }
     if modo == "fake":
         ajustes["calendly_token"] = "eval-unused"

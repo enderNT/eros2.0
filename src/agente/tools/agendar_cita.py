@@ -1,86 +1,79 @@
-"""Hand the patient the booking page for the slot they chose.
+"""Reserve the slot the patient chose, on their behalf.
 
-Calendly's public API cannot create a booking on someone's behalf —
-`/scheduling_links` only mints a link — so this tool never claims a
-confirmed appointment. It returns the slot-specific booking page and says,
-in the tool result the model reads, that nothing is booked yet. The
-appointment row is written only when Calendly's `invitee.created` webhook
-confirms it (TASKS T9b).
+This tool used to hand out a booking page, because Calendly's API could not
+create a booking for someone else. It can now (`POST /invitees`), and that
+changes what the clinic's assistant is for: filling a form and digging a
+confirmation out of an inbox was never the patient's job.
 
-The patient fills in their own name and email on that page, which is why
-this tool does not take them: a model-invented email would silently send
-the confirmation nowhere.
+Two consequences worth stating, because they are the reason the old machinery
+is gone:
 
-The link carries an opaque `utm_content` token so the webhook can tell whose
-booking came back. It is a random id, never the phone number: the URL leaves
-our control the moment we send it.
+* **No token, no link, no `utm_content`.** Attribution was only ever needed to
+  work out whose booking came back from a page we did not control. We know
+  whose it is: we made it.
+* **The appointment exists when this returns.** The old tool had to insist the
+  model not claim a confirmed appointment, because nothing was booked yet. Now
+  the opposite is true, and saying so is correct.
+
+Booking replaces any appointment the contact already had — see
+`BookingService.book_for_contact`, where that rule lives.
 """
 
 from __future__ import annotations
 
-import secrets
-from collections.abc import Callable
 from datetime import datetime, timedelta
-from urllib.parse import urlencode, urlparse, urlunparse
+from zoneinfo import ZoneInfo
 
 from ..domain.contacts import ContactKey
-from ..domain.scheduling import Slot, is_bookable
+from ..domain.errors import SlotTakenError
+from ..domain.scheduling import Slot, is_bookable, slot_label
 from ..ports.calendar import CalendarSlot
-from ..ports.store import AppointmentsRepository, BookingTokensRepository
+from ..services.booking import BookingService
 
 BOOKING_BUFFER = timedelta(minutes=10)
 EXPIRED = "Ese horario ya no está disponible. Ofrece otro de los horarios vigentes."
-ALREADY_BOOKED = "Este contacto ya tiene una cita confirmada en ese horario."
-NO_LINK = "No tengo el enlace de ese horario. Ofrece otro o escala a una persona."
+TAKEN = (
+    "Ese horario acaba de ocuparlo alguien más y la cita NO quedó agendada."
+    " Díselo al paciente y ofrécele otro de los horarios vigentes."
+)
 
 
-def link_instructions(url: str) -> str:
-    """What the model reads after a successful handover.
+def confirmed(label: str, movida: bool) -> str:
+    """What the model reads after a successful booking.
 
-    The "copy it whole" rule is not stylistic. The `utm_content` parameter is
-    the only thing that tells the webhook whose booking came back; a model that
-    tidies the URL by dropping the query string silently breaks attribution,
-    and the failure is invisible — the patient books fine and we never learn.
-    Observed happening, hence the emphasis.
+    It is told the appointment exists, and told to say so — the opposite of the
+    old link flow. When the booking replaced an earlier one, it is told that too,
+    because a patient who moved their appointment needs to hear that the old time
+    is gone, not just that a new one exists.
     """
+    if movida:
+        return (
+            f"Cita reagendada para {label}. La cita anterior quedó cancelada y su horario"
+            " liberado. Dile al paciente las DOS cosas, no sólo la primera: el día y la"
+            " hora nuevos, y que su cita anterior ya quedó cancelada y no tiene que"
+            " hacer nada con ella. Si sólo confirmas la nueva, se queda sin saber si"
+            " sigue teniendo la vieja."
+        )
     return (
-        f"Envíale este enlace EXACTO, copiado completo y sin modificar:\n{url}\n"
-        "No lo acortes, no le quites nada después del signo '?', no lo reescribas"
-        " ni lo pongas en un texto con formato de enlace. Si le quitas la parte"
-        " final, la cita no se podrá asociar a este paciente.\n"
-        "IMPORTANTE: la cita NO está agendada todavía. Ahí completa su nombre, correo y"
-        " número de WhatsApp (el mismo desde el que escribe)."
-        " No le digas que ya quedó confirmada; pídele que te avise cuando termine."
+        f"Cita agendada y confirmada para {label}. Confírmaselo al paciente con"
+        " naturalidad, diciéndole el día y la hora. No le pidas que entre a ningún"
+        " enlace ni que rellene nada: ya está hecho."
     )
 
 
-def tracked_url(url: str, token: str) -> str:
-    """Append `utm_content` without dropping whatever query the link already has."""
-    parts = urlparse(url)
-    query = f"{parts.query}&" if parts.query else ""
-    return urlunparse(parts._replace(query=query + urlencode({"utm_content": token})))
-
-
 async def agendar_cita(
-    appointments: AppointmentsRepository,
-    tokens: BookingTokensRepository,
+    booking: BookingService,
     key: ContactKey,
     slot: CalendarSlot,
     now: datetime,
-    *,
-    make_token: Callable[[], str] = lambda: secrets.token_urlsafe(16),
+    timezone: str,
 ) -> str:
     if not is_bookable(Slot(slot.start_utc, slot.end_utc), now, BOOKING_BUFFER):
         return EXPIRED
-    booked = [
-        item
-        for item in appointments.for_contact(key)
-        if item.slot_utc == slot.start_utc and item.status == "scheduled"
-    ]
-    if booked:
-        return ALREADY_BOOKED
-    if not slot.booking_url:
-        return NO_LINK
-    token = make_token()
-    tokens.issue(token, key, slot.start_utc, now)
-    return link_instructions(tracked_url(slot.booking_url, token))
+    movida = bool(booking.scheduled_for(key))
+    try:
+        reservado = await booking.book_for_contact(key, slot)
+    except SlotTakenError:
+        return TAKEN
+    label = slot_label(Slot(reservado, reservado), ZoneInfo(timezone), now)
+    return confirmed(label, movida)

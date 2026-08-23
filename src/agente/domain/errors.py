@@ -29,3 +29,12 @@ class ModelError(DomainError):
 
 class CalendlyError(DomainError):
     """Calendly adapter failed."""
+
+
+class SlotTakenError(CalendlyError):
+    """The slot was gone by the time we tried to book it.
+
+    Distinct from a generic `CalendlyError` because it is the one calendar
+    failure with a useful answer: offer another time. Everything else means the
+    calendar is unreachable and the patient should get a person.
+    """

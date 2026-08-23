@@ -13,15 +13,20 @@ Calendly sí lo es, y las dos posiciones responden preguntas distintas:
   bien lo que Calendly devuelve hoy, no lo que devolvía cuando se escribió el
   adaptador.
 
-En `real` **no se escribe nada en Calendly**. Las herramientas del agente sólo
-leen disponibilidad y copian la `scheduling_url` que ya viene en cada hueco;
-`create_invitee` no lo llama nadie. La reserva se sigue simulando con un
-`invitee.created` firmado contra nuestro propio webhook.
+Hoy, en `real` **no se escribe nada en Calendly**. Las herramientas del agente
+sólo leen disponibilidad y copian la `scheduling_url` que ya viene en cada hueco;
+la reserva se sigue simulando con un `invitee.created` firmado contra nuestro
+propio webhook.
 
-Eso tiene una consecuencia que hay que decir en voz alta: en `real`, **el hueco
-nunca se ocupa de verdad**. Por eso existe `soporta_ocupacion`: los criterios que
-preguntan "¿el hueco siguió bloqueado?" no pueden responderse en modo real y se
-registran como informativos en vez de dar un falso `NO`.
+Eso tiene una consecuencia que hay que decir en voz alta: mientras siga así, en
+`real` **el hueco nunca se ocupa de verdad**. Por eso existe `soporta_ocupacion`:
+los criterios que preguntan "¿el hueco siguió bloqueado?" no pueden responderse
+en modo real y se registran como informativos en vez de dar un falso `NO`.
+
+Los dos adaptadores ya exponen `book` y `cancel`, que sí escriben. Nadie los
+llama todavía — engancharlos es lo que convertirá `soporta_ocupacion` en cierto
+para el modo real, y ese día habrá que apuntar los casos a un calendario de
+pruebas, porque cada ejecución dejará citas de verdad en la agenda.
 """
 
 from __future__ import annotations
@@ -33,7 +38,7 @@ from typing import Literal
 from agente.adapters.calendly.client import CalendlyClient
 from agente.config import Settings
 from agente.domain.errors import CalendlyError
-from agente.ports.calendar import CalendarSlot
+from agente.ports.calendar import Booking, CalendarSlot
 
 from .fakes import FakeCalendar
 
@@ -71,6 +76,22 @@ class CalendlyEnVivo:
 
     async def availability(self, start: datetime, end: datetime) -> list[CalendarSlot]:
         return await self._cliente.availability(start, end)
+
+    async def book(
+        self,
+        slot: CalendarSlot,
+        *,
+        name: str,
+        email: str,
+        timezone: str,
+        phone: str,
+    ) -> Booking:
+        return await self._cliente.book(
+            slot, name=name, email=email, timezone=timezone, phone=phone
+        )
+
+    async def cancel(self, event_id: str, *, reason: str = "") -> None:
+        await self._cliente.cancel(event_id, reason=reason)
 
     async def create_invitee(self, slot: CalendarSlot, name: str, email: str) -> str:
         return await self._cliente.create_invitee(slot, name, email)

@@ -137,6 +137,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             outbox=outbox,
             channel=app.state.channel,
             reminders=reminders,
+            calendar=app.state.calendar,
+            invitee_email=cfg.calendly_invitee_email,
+            phone_number_id=cfg.kapso_phone_number_id,
             timezone=cfg.calendly_timezone,
             address=cfg.calendly_location_value,
         )
@@ -266,8 +269,7 @@ def _agent_tools(app: FastAPI, key: ContactKey):
         knowledge=app.state.knowledge,
         mutes=SqliteMutesRepository(app.state.db),
         calendar=app.state.calendar,
-        appointments=SqliteAppointmentsRepository(app.state.db),
-        booking_tokens=app.state.booking_tokens,
+        booking=app.state.booking,
         key=key,
         timezone=app.state.settings.calendly_timezone,
     )

@@ -59,12 +59,24 @@ def rubric(
     steps: list[str],
     threshold: float = 0.7,
     params: list[MultiTurnParams] | None = None,
+    con_evidencia: bool = False,
 ) -> ConversationalGEval:
-    """Una métrica conversacional con pasos fijos."""
+    """Una métrica conversacional con pasos fijos.
+
+    `con_evidencia` añade el `retrieval_context` —lo que devolvieron las
+    herramientas— a lo que ve el juez. Existe como interruptor con nombre porque
+    olvidarlo no da error: los pasos pueden hablar del contexto recuperado, el
+    juez no recibirlo, y el veredicto salir 0 con una razón perfectamente
+    convincente que dice que no consta la evidencia. Si un paso menciona
+    `retrieval_context`, esto tiene que estar en `True`.
+    """
+    por_defecto = [MultiTurnParams.CONTENT, MultiTurnParams.ROLE]
+    if con_evidencia:
+        por_defecto.append(MultiTurnParams.RETRIEVAL_CONTEXT)
     return ConversationalGEval(
         name=name,
         evaluation_steps=steps,
-        evaluation_params=params or [MultiTurnParams.CONTENT, MultiTurnParams.ROLE],
+        evaluation_params=params or por_defecto,
         model=judge(),
         threshold=threshold,
         async_mode=False,
@@ -180,6 +192,7 @@ def caso_conversacional(
     escenario: str,
     resultado_esperado: str | None = None,
     rol: str = ROL_CLINICA,
+    desde: int = 0,
     hasta: int | None = None,
 ) -> ConversationalTestCase:
     """Convierte la conversación que ocurrió en el caso que deepeval va a juzgar.
@@ -194,11 +207,16 @@ def caso_conversacional(
     sistema manda, con toda razón, "tu cita quedó cancelada". Un juez que mide si
     el bot prometió cancelar ve esa frase al final y la cuenta como promesa
     incumplida — un falso positivo fabricado por el propio caso.
+
+    `desde` hace lo simétrico y por el mismo motivo: en C14 lo que se juzga es
+    cómo responde el asistente al arrepentimiento, y los turnos anteriores —donde
+    cancela correctamente porque se lo pidieron— sólo sirven para confundir al
+    juez con una cancelación que nadie discute.
     """
     from deepeval.test_case import ConversationalTestCase, Turn
 
     turnos: list[Turn] = []
-    for intercambio in world.exchanges[:hasta]:
+    for intercambio in world.exchanges[desde:hasta]:
         if intercambio.origin == "paciente":
             turnos.append(Turn(role="user", content=intercambio.sent))
         evidencia = [f"[{nombre}] {salida}" for nombre, salida in intercambio.evidencia]

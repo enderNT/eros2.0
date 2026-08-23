@@ -18,7 +18,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from agente.ports.calendar import CalendarSlot
+from agente.domain.errors import CalendlyError, SlotTakenError
+from agente.ports.calendar import Booking, CalendarSlot
 from agente.ports.channel import ConversationList, ConversationRow
 
 
@@ -103,6 +104,26 @@ class FakeCalendar:
     `mark_free`; lo llama el arnés al simular `invitee.canceled`. Que un hueco se
     quede muerto tras un "al final no puedo" no es un defecto del doble: es
     exactamente lo que pasa en producción.
+
+    `book` / `cancel` reproducen las reglas de escritura **verificadas** contra
+    la API real el 2026-08-22, y sólo ésas:
+
+    * reservar un hueco ya ocupado levanta `SlotTakenError` (la API responde 400
+      `already_filled`): Calendly arbitra, así que la doble reserva no existe;
+    * cancelar libera el hueco en el acto, y por eso reagendar es cancelar y
+      volver a reservar — no hay endpoint de reagendado;
+    * cancelar dos veces no falla (la API responde 403 `already canceled`, que
+      para nosotros es el estado deseado), y cancelar algo desconocido sí.
+
+    Lo que **no** se imita es qué contesta la API a un horario fuera de
+    disponibilidad: nunca se llegó a observar, y un doble que se lo invente
+    haría pasar casos que en producción fallarían.
+
+    Y una divergencia que conviene tener presente: aquí cancelar libera el hueco
+    de forma determinista, siempre. Contra la API real se midió reaparición
+    inmediata en dos de tres intentos, y en el tercero el hueco tardó en volver
+    a ofrecerse. Un caso que cancele y pregunte por disponibilidad en el mismo
+    aliento pasará siempre aquí y podrá parpadear en modo real.
     """
 
     timezone: str = "America/Mexico_City"
@@ -113,26 +134,60 @@ class FakeCalendar:
     booked: set[datetime] = field(default_factory=set)
     extra: set[datetime] = field(default_factory=set)
     lead: timedelta = timedelta(minutes=5)
+    events_url: str = "https://calendly.test/scheduled_events"
+    bookings: dict[str, datetime] = field(default_factory=dict)
+    canceled: set[str] = field(default_factory=set)
+    counter: int = 0
 
     def add_slot(self, start_utc: datetime) -> CalendarSlot:
         """Ofrecer un hueco arbitrario, para casos que necesitan una cita en minutos."""
-        moment = start_utc.astimezone(UTC).replace(microsecond=0)
+        moment = _floor(start_utc)
         self.extra.add(moment)
         return self._slot(moment)
 
     def mark_booked(self, start_utc: datetime) -> None:
-        self.booked.add(start_utc.astimezone(UTC).replace(microsecond=0))
+        self.booked.add(_floor(start_utc))
 
     def mark_free(self, start_utc: datetime) -> None:
-        self.booked.discard(start_utc.astimezone(UTC).replace(microsecond=0))
+        self.booked.discard(_floor(start_utc))
 
     def is_booked(self, start_utc: datetime) -> bool:
-        return start_utc.astimezone(UTC).replace(microsecond=0) in self.booked
+        return _floor(start_utc) in self.booked
 
     async def availability(self, start: datetime, end: datetime) -> list[CalendarSlot]:
         floor = max(start, datetime.now(UTC) + self.lead)
         moments = sorted(self._grid(floor, end) | {m for m in self.extra if floor < m <= end})
         return [self._slot(moment) for moment in moments if moment not in self.booked]
+
+    async def book(
+        self,
+        slot: CalendarSlot,
+        *,
+        name: str,
+        email: str,
+        timezone: str,
+        phone: str,
+    ) -> Booking:
+        moment = _floor(slot.start_utc)
+        if moment in self.booked:
+            raise SlotTakenError("slot already booked")
+        self.booked.add(moment)
+        # Un id nuevo por reserva, aunque sea el mismo hueco de una cita
+        # cancelada: Calendly acuña un uuid cada vez, y el índice único de
+        # `calendly_event_id` rechazaría un id repetido.
+        self.counter += 1
+        event_id = f"{self.events_url}/{self.counter:04d}"
+        self.bookings[event_id] = moment
+        return Booking(event_id=event_id, invitee_id=f"{event_id}/invitees/1", start_utc=moment)
+
+    async def cancel(self, event_id: str, *, reason: str = "") -> None:
+        if event_id in self.canceled:
+            return
+        moment = self.bookings.get(event_id)
+        if moment is None:
+            raise CalendlyError("unknown event")
+        self.canceled.add(event_id)
+        self.booked.discard(moment)
 
     async def create_invitee(self, slot: CalendarSlot, name: str, email: str) -> str:
         return slot.booking_url
@@ -162,3 +217,8 @@ class FakeCalendar:
             end_utc=start_utc + timedelta(minutes=self.duration_minutes),
             booking_url=f"{self.base_url}/{stamp}",
         )
+
+
+def _floor(moment: datetime) -> datetime:
+    """UTC al segundo: la clave con la que un hueco se identifica en el doble."""
+    return moment.astimezone(UTC).replace(microsecond=0)

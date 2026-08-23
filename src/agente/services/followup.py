@@ -61,7 +61,14 @@ class BookingFollowups:
         )
 
     def cancel_for_contact(self, key: ContactKey) -> None:
-        self._outbox.cancel_for_contact(key)
+        """Drop the pending booking follow-up: the patient just wrote, so asking
+        "¿pudiste agendar tu cita?" later is noise.
+
+        Scoped to `booking_followup` on purpose. This runs on **every** inbound
+        message, and unscoped it also deleted the appointment reminder — one
+        message from the patient and the reminder never fired.
+        """
+        self._outbox.cancel_for_contact(key, kind="booking_followup")
 
     def cancel_for_token(self, token: str) -> None:
         self._outbox.cancel_for_token(token)

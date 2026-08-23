@@ -20,10 +20,12 @@ from typing import Any
 from ..domain.contacts import ContactKey
 from ..domain.errors import CalendlyError, DomainError
 from ..ports.calendar import Calendar, CalendarSlot
-from ..ports.store import AppointmentsRepository, BookingTokensRepository, MutesRepository
+from ..ports.store import MutesRepository
+from ..services.booking import BookingService
 from ..services.knowledge import Knowledge
 from .agendar_cita import agendar_cita
 from .buscar_wiki import buscar_wiki
+from .cancelar_cita import cancelar_cita
 from .escalar_a_humano import escalar_a_humano
 from .ver_horarios import ver_horarios
 
@@ -35,6 +37,10 @@ AVAILABILITY_DAYS = 14
 CALENDAR_DOWN = "No puedo consultar la agenda ahora mismo. Ofrece continuar con una persona."
 UNKNOWN_SLOT = "Ese horario ya no está disponible. Ofrece otro de los horarios vigentes."
 STORE_DOWN = "No pude guardar el dato. No confirmes nada al paciente."
+CANCEL_DOWN = (
+    "No pude cancelar la cita ahora mismo y sigue agendada. NO le digas que quedó"
+    " cancelada: dile que hubo un problema y pásalo a una persona del equipo."
+)
 
 DEFINITIONS: list[dict[str, Any]] = [
     {
@@ -78,12 +84,11 @@ DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "agendar_cita",
         "description": (
-            "Devuelve el enlace para que el paciente confirme un horario que ya le"
-            " ofreciste con ver_horarios. No reserva nada por sí sola: la cita queda"
-            " agendada cuando el paciente completa sus datos en ese enlace, así que"
-            " nunca le confirmes la cita antes de que te avise que terminó. El enlace"
-            " se copia COMPLETO, tal cual, incluida la parte después del '?': si le"
-            " quitas algo, la cita no se puede asociar al paciente."
+            "Reserva de verdad un horario que ya le ofreciste con ver_horarios. La cita"
+            " queda agendada y confirmada al usar esta herramienta: el paciente no tiene"
+            " que entrar a ningún enlace ni rellenar nada. Si ya tenía otra cita, ésta la"
+            " sustituye y la anterior se cancela sola. Úsala sólo cuando el paciente haya"
+            " aceptado un horario concreto."
         ),
         "input_schema": {
             "type": "object",
@@ -94,6 +99,35 @@ DEFINITIONS: list[dict[str, Any]] = [
                 }
             },
             "required": ["inicio"],
+        },
+    },
+    {
+        "name": "cancelar_cita",
+        "description": (
+            "Cancela la cita del paciente y libera su horario. Se usa en DOS pasos:"
+            " llámala primero sin confirmado para saber qué cita es y pregúntale al"
+            " paciente si quiere cancelarla; sólo cuando responda que sí de forma clara,"
+            " vuelve a llamarla con confirmado=true. Que dude sobre si podrá asistir"
+            " ('creo que no llego', 'se me complicó') NO es pedir una cancelación:"
+            " ofrécele cancelar o reagendar y espera su respuesta. Para mover una cita"
+            " no hace falta cancelar: usa agendar_cita con el horario nuevo."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "confirmado": {
+                    "type": "boolean",
+                    "description": (
+                        "true SÓLO si el paciente ya dijo explícitamente que sí quiere"
+                        " cancelar. Nunca lo pongas por iniciativa propia."
+                    ),
+                },
+                "motivo": {
+                    "type": "string",
+                    "description": "Motivo breve, en las palabras del paciente.",
+                },
+            },
+            "required": [],
         },
     },
     {
@@ -116,8 +150,7 @@ def build_tools(
     knowledge: Knowledge,
     mutes: MutesRepository,
     calendar: Calendar,
-    appointments: AppointmentsRepository,
-    booking_tokens: BookingTokensRepository,
+    booking: BookingService,
     key: ContactKey,
     timezone: str,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
@@ -145,9 +178,29 @@ def build_tools(
         if slot is None:
             return UNKNOWN_SLOT
         try:
-            return await agendar_cita(appointments, booking_tokens, key, slot, moment)
+            return await agendar_cita(booking, key, slot, moment, timezone)
+        except CalendlyError:
+            log.error("tool_failed", extra={"tool": "agendar_cita", "stage": "book"})
+            return CALENDAR_DOWN
         except DomainError:
             log.error("tool_failed", extra={"tool": "agendar_cita", "stage": "store"})
+            return STORE_DOWN
+
+    async def _cancelar_cita(data: dict[str, Any]) -> str:
+        try:
+            return await cancelar_cita(
+                booking,
+                key,
+                now(),
+                timezone,
+                confirmado=bool(data.get("confirmado")),
+                motivo=str(data.get("motivo", "")),
+            )
+        except CalendlyError:
+            log.error("tool_failed", extra={"tool": "cancelar_cita", "stage": "calendar"})
+            return CANCEL_DOWN
+        except DomainError:
+            log.error("tool_failed", extra={"tool": "cancelar_cita", "stage": "store"})
             return STORE_DOWN
 
     async def _escalar_a_humano(data: dict[str, Any]) -> str:
@@ -161,6 +214,7 @@ def build_tools(
         "buscar_wiki": _buscar_wiki,
         "ver_horarios": _ver_horarios,
         "agendar_cita": _agendar_cita,
+        "cancelar_cita": _cancelar_cita,
         "escalar_a_humano": _escalar_a_humano,
     }
 

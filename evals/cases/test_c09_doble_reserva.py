@@ -1,98 +1,103 @@
-"""C09 — "Quiero cambiar mi cita": el hueco de la doble reserva.
+"""C09 — "Quiero cambiar mi cita": que mover no signifique duplicar.
 
 Documentado en `evals/casos/C09-doble-reserva.md`.
 
-El bot no sabe cancelar pero sí sabe agendar. Ante un "quiero moverla", el camino
-de menor resistencia es crear una segunda cita y dejar la primera viva: dos
-huecos bloqueados y, potencialmente, dos recordatorios al mismo paciente.
+Este caso cambió de signo. Cuando el bot sólo sabía mandar enlaces, el camino de
+menor resistencia ante un "quiero moverla" era crear una segunda cita y dejar la
+primera viva, y el caso **documentaba** ese hueco: esperaba dos citas. Con un
+calendario en el que se puede escribir, reagendar es cancelar y volver a
+reservar, así que ahora exige lo contrario — una sola cita, la nueva, y el hueco
+viejo libre.
+
+Mientras `agendar_cita` siga entregando enlaces, los criterios 2 y 4 dan NO. Ese
+es el rojo que se busca: dice exactamente qué falta.
 """
 
 from __future__ import annotations
-
-from zoneinfo import ZoneInfo
 
 from evals.harness import Report, caso_conversacional, cerrar, rubric, world
 
 CASO = "C09"
 
 
-def avisa_de_la_cita_vieja():
+def confirma_el_cambio_sin_dejar_cabos():
     return rubric(
-        "Avisa de que la cita anterior sigue en pie",
+        "Confirma el horario nuevo y deja claro que el viejo se soltó",
         threshold=0.7,
         steps=[
             "Localiza el turno donde el paciente pide mover su cita a otro día.",
-            "Comprueba si el asistente advierte que la cita original sigue reservada y hay"
-            " que cancelarla aparte, o si ofrece horarios nuevos como si la anterior"
-            " desapareciera sola.",
-            "Puntúa 1 sólo si el aviso es explícito antes o al mandar el enlace nuevo.",
+            "Comprueba si el asistente confirma el horario nuevo y dice, explícita o"
+            " implícitamente, que la cita anterior deja de estar reservada.",
+            "Puntúa 0 si ofrece un horario nuevo dando a entender que el paciente tiene"
+            " que cancelar el anterior por su cuenta, o si no menciona qué pasa con él.",
+            "Puntúa 0 también si afirma haber movido la cita sin que conste el cambio.",
         ],
     )
 
 
-async def test_cambiar_la_cita_crea_una_segunda() -> None:
-    reporte = Report(CASO, "Doble reserva al pedir cambio", ajustes={"recordatorio": "60 min"})
+async def test_mover_la_cita_no_deja_dos() -> None:
+    reporte = Report(
+        CASO, "Mover la cita sin dejar la vieja en pie", ajustes={"recordatorio": "60 min"}
+    )
     async with world("C09-doble-reserva", debounce_seconds=1.0) as w:
         w.set_reminder_minutes(60)
-        primera_uri, primera = await w.preparar_cita(en_minutos=300)
-        tokens_antes = len(w.state().tokens)
-
-        nuevo = await w.calendar.elegir_hueco(600)
-        etiqueta = nuevo.astimezone(ZoneInfo(w.settings.calendly_timezone)).strftime("%H:%M")
-
-        await w.say("puedo mover mi cita para otro día?")
-        for _ in range(3):
-            if len(w.state().tokens) > tokens_antes:
-                break
-            await w.say(f"sí, prefiero hoy a las {etiqueta}")
-
-        # Igual que en la precondición: se reserva el horario del token que el bot
-        # acabó emitiendo, no el que se pidió, para no fabricar incoherencias.
-        segunda = nuevo
-        if len(w.state().tokens) > tokens_antes:
-            token, segunda = w.tokens()[0]
-            await w.book(token=token, slot=segunda)
-
-        estado = w.state()
+        reserva = await w.preparar_cita_directa(en_minutos=300)
         reporte.criterio(
-            1,
-            "Quedaron dos citas vigentes a la vez",
-            len(estado.scheduled) == 2,
+            0,
+            "La cita de la precondición la reservó el propio sistema, sin enlace",
+            reserva.por_el_sistema,
             esperado=True,
             nota=(
-                "Hueco: cambiar de cita crea una segunda y deja viva la primera."
-                f" Vigentes: {[c.slot_utc.isoformat() for c in estado.scheduled]}"
+                "Si da NO, `agendar_cita` sigue entregando enlaces y el arnés tuvo que"
+                " simular la reserva por webhook: la causa de los criterios 2 y 4."
+            ),
+        )
+
+        nuevo = await w.calendar.elegir_hueco(600)
+        await w.say("puedo mover mi cita para otro día?")
+        for _ in range(4):
+            if w.state().scheduled and w.state().scheduled[0].slot_utc != reserva.slot_utc:
+                break
+            await w.say(f"sí, muévela {w.frase_horario(nuevo)} por favor")
+
+        estado = w.state()
+        vigentes = estado.scheduled
+        reporte.criterio(
+            1,
+            "Quedó exactamente una cita vigente",
+            len(vigentes) == 1,
+            esperado=True,
+            nota=(
+                "Ojo al leerlo: si el sistema no hizo nada, este criterio da SÍ por"
+                " inacción. El que delata es el 2."
+                f" Vigentes: {[c.slot_utc.isoformat() for c in vigentes]}"
             ),
         )
         reporte.criterio(
             2,
-            "Hay dos recordatorios pendientes para el mismo paciente",
-            len([r for r in estado.reminders if not r.sent]) == 2,
+            "La cita vigente ya no es la del horario original",
+            bool(vigentes) and vigentes[0].slot_utc != reserva.slot_utc,
             esperado=True,
-            nota="Hueco: el paciente recibiría dos avisos de dos citas distintas.",
+            nota="Se compara contra el horario reservado, no contra el pedido: el modelo"
+            " puede haber ofrecido otro hueco y da igual cuál, mientras cambie.",
         )
         reporte.criterio(
             3,
-            "Los dos huecos quedaron bloqueados en el calendario",
-            None
-            if w.ocupacion(primera) is None
-            else (w.ocupacion(primera) and w.ocupacion(segunda)),
+            "Hay un solo recordatorio pendiente",
+            len([r for r in estado.reminders if not r.sent]) == 1,
             esperado=True,
+            nota="Dos recordatorios significan dos avisos de dos citas al mismo paciente.",
         )
         reporte.criterio(
             4,
-            "El panel muestra la cita más temprana",
-            bool(estado.scheduled) and estado.scheduled[0].slot_utc == min(primera, segunda),
+            "El hueco viejo volvió a quedar libre",
+            None if w.ocupacion(reserva.slot_utc) is None else not w.ocupacion(reserva.slot_utc),
             esperado=True,
-            nota=(
-                "`for_contact` ordena por `slot_utc`: el panel enseña la vieja, que suele"
-                " ser justo la que el paciente quería abandonar."
-            ),
+            nota="Un hueco muerto es una hora de consulta que nadie puede tomar.",
         )
-        assert primera_uri
 
         reporte.medir(
-            avisa_de_la_cita_vieja(),
+            confirma_el_cambio_sin_dejar_cabos(),
             caso_conversacional(
                 w,
                 escenario=(
@@ -100,8 +105,9 @@ async def test_cambiar_la_cita_crea_una_segunda() -> None:
                     " con el asistente."
                 ),
                 resultado_esperado=(
-                    "El asistente ofrece el horario nuevo y advierte de que la cita"
-                    " anterior sigue reservada y hay que cancelarla."
+                    "El asistente mueve la cita: confirma el horario nuevo y deja claro"
+                    " que el anterior queda liberado, sin pedirle al paciente que cancele"
+                    " por su cuenta."
                 ),
             ),
         )

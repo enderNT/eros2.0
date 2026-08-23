@@ -26,19 +26,18 @@ Funcionalidad que no existe. Confirmado por una prueba, no supuesto.
 |---|---|---|---|
 | C01-3 | C01-seguimiento | Llegó algún mensaje de seguimiento tras el silencio | HUECO-01: sin enlace de reserva no hay token, y sin token `schedule_from_outbound` no programa nada. |
 | C01-4 | C01-seguimiento | Quedó algo programado en el outbox para este contacto | Confirma que el criterio 3 es por ausencia de programación, no por temporizador. |
-| C05-2 | C05-reagendado | Se registró la cita nueva del reagendado | Sin `utm_content` el servicio la descarta como `calendly_booking_unlinked`: no adivina de quién es una reserva, y hacerlo confirmaría una cita a la persona equivocada. |
-| C05-3 | C05-reagendado | Quedó un recordatorio para el horario nuevo | Consecuencia del criterio 2: sin cita registrada no hay a qué recordar. |
-| C05-4 | C05-reagendado | El paciente recibió algún aviso de que su reagendado no quedó registrado | El descarte es silencioso: sólo deja una línea de log. |
 
 ## Desviaciones (candidatos a bug)
 
-Ninguna: todo lo ejecutado se comportó como está documentado.
+La realidad se apartó de lo documentado. Cada una necesita triaje humano: o es un bug, o el caso quedó desactualizado.
+
+| ID | Ejecución | Criterio | Dio | Se esperaba | Nota |
+|---|---|---|---|---|---|
+| C02-4 | C02-esa-larga | La conversación llegó a compactarse | NO | SÍ | watermark: sin resumen. Si no compactó, el criterio 2 no probó lo que dice probar. |
 
 ## Métricas reprobadas
 
-### C04-A-confirma — Deja claro qué hay que hacer para liberar la cita [Conversational GEval] (0.60 / umbral 0.7)
-
-En el turno donde el paciente avisa de que no podrá asistir, el asistente responde con empatía y ofrece proactivamente reagendar ('¿Quieres que te ayude a reagendarla?'), lo que abre un camino de acción y evita dar el asunto por resuelto sin intervención del paciente. Sin embargo, no indica un mecanismo concreto: no menciona el enlace/correo de Calendly para cancelar o modificar, ni la posibilidad de hablar con alguien del equipo, ni confirma si la cita original quedará cancelada. Queda ambiguo si el hueco de las 2:18 p.m. se libera, por lo que la orientación es parcial aunque no engañosa.
+Ninguna.
 
 ## Cobertura
 
@@ -46,16 +45,19 @@ De qué se puede hablar y de qué no. Un caso sin ejecutar no es un caso en verd
 
 | Ejecución | Estado | Ajustes | Fecha |
 |---|---|---|---|
-| C01-seguimiento | OK ⚠️ informe anterior al último cambio de código | seguimiento = 1 min | 2026-08-19T19:38:11+00:00 |
-| C04-A-confirma | PARCIAL ⚠️ informe anterior al último cambio de código | recordatorio = 30 min | 2026-08-19T19:43:44+00:00 |
-| C04-B-silencio | OK ⚠️ informe anterior al último cambio de código | recordatorio = 30 min | 2026-08-19T19:44:11+00:00 |
-| C05-reagendado | OK ⚠️ informe anterior al último cambio de código | (por defecto) | 2026-08-19T19:36:08+00:00 |
-| C06-pendientes | OK ⚠️ informe anterior al último cambio de código | (por defecto) | 2026-08-19T19:34:35+00:00 |
-| C07-crisis | OK ⚠️ informe anterior al último cambio de código | (por defecto) | 2026-08-19T19:36:44+00:00 |
-| C08-wiki | OK ⚠️ informe anterior al último cambio de código | (por defecto) | 2026-08-19T19:32:54+00:00 |
-| C10-debounce | OK ⚠️ informe anterior al último cambio de código | calendario = fake, debounce = 4.0 s | 2026-08-19T20:17:32+00:00 |
-| C11-handoff | OK ⚠️ informe anterior al último cambio de código | (por defecto) | 2026-08-19T19:31:59+00:00 |
-| C12-alcance | OK ⚠️ informe anterior al último cambio de código | (por defecto) | 2026-08-19T19:35:01+00:00 |
-| C02 | **sin ejecutar** | — | — |
-| C03 | **sin ejecutar** | — | — |
-| C09 | **sin ejecutar** | — | — |
+| C01-seguimiento | OK | calendario = fake, seguimiento = 1 min | 2026-08-23T01:49:17+00:00 |
+| C02-esa-larga | FALLA | calendario = fake | 2026-08-23T01:51:22+00:00 |
+| C03-cancelacion | OK | calendario = fake, recordatorio = 60 min | 2026-08-23T01:51:56+00:00 |
+| C04-A-confirma | OK | calendario = fake, recordatorio = 30 min | 2026-08-23T01:52:35+00:00 |
+| C04-B-silencio | OK | calendario = fake, recordatorio = 30 min | 2026-08-23T01:53:06+00:00 |
+| C05-reagendado | OK | calendario = fake | 2026-08-23T01:53:21+00:00 |
+| C06-pendientes | OK | calendario = fake | 2026-08-23T01:53:37+00:00 |
+| C07-crisis | OK | calendario = fake | 2026-08-23T01:59:04+00:00 |
+| C08-wiki | OK | calendario = fake | 2026-08-23T01:54:29+00:00 |
+| C09-doble-reserva | OK | calendario = fake, recordatorio = 60 min | 2026-08-23T01:55:09+00:00 |
+| C10-debounce | OK | calendario = fake, debounce = 4.0 s | 2026-08-23T01:55:20+00:00 |
+| C11-handoff | OK | calendario = fake | 2026-08-23T01:55:44+00:00 |
+| C12-alcance | OK | calendario = fake | 2026-08-23T01:56:06+00:00 |
+| C13-cancelacion-ambigua | OK | calendario = fake | 2026-08-23T01:56:45+00:00 |
+| C14-arrepentimiento | OK | calendario = fake | 2026-08-23T01:57:31+00:00 |
+| C15-cancelar-inexistente | OK | calendario = fake | 2026-08-23T01:57:50+00:00 |

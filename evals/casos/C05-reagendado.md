@@ -1,6 +1,6 @@
-# C05 — Reagendado: la cita nueva que puede quedarse sin dueño
+# C05 — La cita se mueve desde Calendly: ¿se entera el paciente?
 
-**Ejecutar (parte automática):**
+**Ejecutar:**
 
 ```bash
 .venv-evals/bin/python -m pytest evals/cases/test_c05_reagendado.py -q
@@ -10,55 +10,46 @@
 
 ## Qué se prueba
 
-Cuando alguien reagenda desde el correo de Calendly, Calendly emite un
-`invitee.canceled` y un `invitee.created` nuevo. `BookingService._created` exige
-que el evento traiga el `utm_content` del token de reserva para saber de quién
-es: sin él, la reserva se descarta como `calendly_booking_unlinked`, en silencio.
+El caso cambió de protagonista. Cuando el enlace lo completaba el paciente, era
+él quien podía pulsar *Reschedule* en su correo. Si la reserva la hace el
+sistema con un correo de la clínica, el paciente ya no recibe ese correo — y el
+único que puede mover una cita desde fuera del chat es **la propia clínica**,
+desde la interfaz de Calendly.
 
-Aquí hay **dos preguntas distintas** que es fácil confundir, y por eso el caso
-tiene dos mitades.
+Eso va a pasar: un imprevisto de la psicóloga, un hueco que se corre media hora.
+Y Calendly emite entonces un `invitee.canceled` y un `invitee.created` nuevo que
+**no trae el `utm_content` de ningún token nuestro**, porque no salió de un
+enlace nuestro.
 
-## Parte A — qué hace nuestro código (automática)
+## Precondición
 
-Determinista, sin Calendly. El arnés simula el reagendado tal como llegaría si
-Calendly **no** propagara el tracking: cancela el evento viejo y crea otro con
-`utm_content` vacío.
+Cita confirmada con `preparar_cita_directa`, recordatorio a 60 minutos.
+
+## Pasos
+
+1. Cita confirmada.
+2. Se simula el reagendado del anfitrión: `invitee.canceled` del evento viejo y
+   un `invitee.created` nuevo, dos horas después, sin tracking.
+3. Se lee el estado.
+
+## Criterios
 
 | # | Criterio | Esperado |
 |---|---|---|
+| 0 | La cita de la precondición la reservó el propio sistema, sin enlace | SÍ |
 | 1 | La cita vieja quedó cancelada | SÍ |
-| 2 | Se registró la cita nueva del reagendado | **NO** |
-| 3 | Quedó un recordatorio para el horario nuevo | **NO** |
-| 4 | El paciente recibió aviso de que su reagendado no quedó registrado | **NO** |
-
-Los tres `NO` son deliberados y describen el comportamiento actual: sin token no
-se adivina de quién es una reserva — hacerlo confirmaría una cita a la persona
-equivocada — y el descarte sólo deja una línea de log.
-
-## Parte B — qué manda Calendly de verdad (manual, una vez)
-
-Esto ningún test lo puede saber. Hace falta una persona:
-
-1. Levanta el entorno real: `docker compose up -d` y el túnel de ngrok.
-2. Conversa hasta que el bot mande el enlace y **reserva de verdad** desde él.
-3. `docker compose exec agente python /app/scripts/e2e.py state` — confirma cita
-   y recordatorio programado.
-4. En el correo de Calendly, pulsa **Reschedule** y elige otro horario.
-5. `state` de nuevo.
-6. `docker compose logs --tail 100 agente | grep calendly`
-
-**Qué buscar:**
-
-- ¿Aparece `calendly_booking_unlinked` en los logs?
-- ¿Hay una cita nueva con el horario nuevo, o sólo la vieja cancelada?
-- ¿La cita nueva tiene su propio recordatorio?
+| 2 | Se registró la cita nueva del reagendado | SÍ |
+| 3 | Quedó un recordatorio para el horario nuevo | SÍ |
+| 4 | El paciente recibió aviso de que su cita cambió de hora | SÍ |
 
 ## Cómo leerlo
 
-Si en la parte B aparece `calendly_booking_unlinked` y no hay cita nueva, el
-riesgo está **confirmado**: reagendar deja al paciente sin cita registrada y sin
-recordatorio, sin que nadie se entere. Es **bug grave** y bloquea el uso real.
+Los criterios 2, 3 y 4 **eran hueco aceptado** (`esperado=NO`) y ahora se exigen
+arreglados. Es la decisión que este caso documenta: una cita movida por la
+clínica que el paciente no conoce es la peor versión de todas — se presenta a la
+hora vieja, o no se presenta a la nueva, sin haber hecho nada mal.
 
-Si Calendly sí propaga el tracking, la parte A sigue siendo válida como
-descripción de qué pasaría si dejara de hacerlo — que es justo la clase de
-cambio externo que rompe cosas en silencio.
+Hoy `BookingService._created` descarta el evento como `calendly_booking_unlinked`
+porque no trae `utm_content`, y el descarte es **silencioso**: sólo deja una
+línea de log. Reservando nosotros conocemos el `event_id` y el correo del
+invitado, así que hay por dónde atribuirlo sin adivinar de quién es una reserva.
