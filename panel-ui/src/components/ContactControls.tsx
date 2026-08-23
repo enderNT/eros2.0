@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { timestamp } from "../format";
-import type { Contact, ReminderResult } from "../types";
+import type { Contact, FollowupResult, ReminderResult } from "../types";
 import { Hint } from "./Hint";
 
 interface Props {
@@ -9,6 +9,7 @@ interface Props {
   onMute: (muted: boolean, expiresIn: number | null) => Promise<void>;
   onReset: () => Promise<number>;
   onSendReminder: () => Promise<ReminderResult>;
+  onSendInterestFollowup: () => Promise<FollowupResult>;
 }
 
 const REMINDER_MESSAGE: Record<ReminderResult, { text: string; tone: "subtle" | "error" }> = {
@@ -22,16 +23,42 @@ const REMINDER_MESSAGE: Record<ReminderResult, { text: string; tone: "subtle" | 
   already_sent: { text: "No hay un recordatorio pendiente para enviar.", tone: "subtle" },
 };
 
-export function ContactControls({ contact, onMute, onReset, onSendReminder }: Props) {
+const FOLLOWUP_MESSAGE: Record<FollowupResult, { text: string; tone: "subtle" | "error" }> = {
+  sent: { text: "Seguimiento enviado.", tone: "subtle" },
+  muted: {
+    text: "No se envió: el bot está silenciado para este contacto.",
+    tone: "error",
+  },
+  booked: { text: "No se envió: esta persona ya tiene una cita agendada.", tone: "subtle" },
+  failed: { text: "No se pudo enviar. Revisa la conexión de WhatsApp.", tone: "error" },
+  missing: { text: "No hay un seguimiento pendiente para enviar.", tone: "subtle" },
+  already_sent: { text: "No hay un seguimiento pendiente para enviar.", tone: "subtle" },
+};
+
+export function ContactControls({
+  contact,
+  onMute,
+  onReset,
+  onSendReminder,
+  onSendInterestFollowup,
+}: Props) {
   const [expiresIn, setExpiresIn] = useState("");
   const [purged, setPurged] = useState<number | null>(null);
   const [reminder, setReminder] = useState<ReminderResult | null>(null);
+  const [followup, setFollowup] = useState<FollowupResult | null>(null);
 
   async function sendReminder() {
     if (!window.confirm("Se enviará ahora el recordatorio pendiente a esta persona. ¿Continuar?")) {
       return;
     }
     setReminder(await onSendReminder());
+  }
+
+  async function sendInterestFollowup() {
+    if (!window.confirm("Se escribirá ahora a esta persona para retomar el contacto. ¿Continuar?")) {
+      return;
+    }
+    setFollowup(await onSendInterestFollowup());
   }
 
   async function reset() {
@@ -41,6 +68,7 @@ export function ContactControls({ contact, onMute, onReset, onSendReminder }: Pr
     if (!window.confirm(warning)) return;
     setPurged(await onReset());
     setReminder(null);
+    setFollowup(null);
   }
 
   return (
@@ -90,6 +118,24 @@ export function ContactControls({ contact, onMute, onReset, onSendReminder }: Pr
           {reminder !== "sent" && (
             <button type="button" onClick={() => void sendReminder()}>
               Enviar recordatorio ahora
+            </button>
+          )}
+        </div>
+      )}
+
+      {!contact.appointment && (
+        <div className="form-action appointment-reminder-trigger">
+          <strong>Seguimiento de interés</strong>
+          <p className="subtle">
+            Esta persona todavía no tiene cita. Puedes escribirle ya para retomar el contacto, sin
+            esperar a que venza el plazo.
+          </p>
+          {followup && (
+            <p className={FOLLOWUP_MESSAGE[followup].tone}>{FOLLOWUP_MESSAGE[followup].text}</p>
+          )}
+          {followup !== "sent" && (
+            <button type="button" onClick={() => void sendInterestFollowup()}>
+              Enviar seguimiento ahora
             </button>
           )}
         </div>

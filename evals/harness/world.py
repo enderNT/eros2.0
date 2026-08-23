@@ -131,7 +131,18 @@ class Snapshot:
 
     @property
     def followups(self) -> tuple[Pending, ...]:
+        """Seguimientos **de reserva**: los que cuelgan de un horario ya ofrecido."""
         return tuple(item for item in self.outbox if item.kind == "booking_followup")
+
+    @property
+    def seguimientos_interes(self) -> tuple[Pending, ...]:
+        """Seguimientos **de interés**: los de quien nunca llegó a tener un horario.
+
+        Separado de `followups` porque un caso que los sume no está midiendo nada:
+        ver uno u otro dice cosas distintas sobre en qué punto se enfrió la
+        conversación.
+        """
+        return tuple(item for item in self.outbox if item.kind == "interest_followup")
 
 
 class World:
@@ -162,7 +173,17 @@ class World:
         self.app.state.runtime_settings.set_appointment_reminder_minutes(minutes, datetime.now(UTC))
 
     def set_followup_minutes(self, minutes: int) -> None:
+        """El plazo del seguimiento **de reserva**: quien ya tenía un horario."""
         self.app.state.runtime_settings.set_booking_followup_minutes(minutes, datetime.now(UTC))
+
+    def set_interest_followup_minutes(self, minutes: int) -> None:
+        """El plazo del seguimiento **de interés**: quien no llegó a agendar.
+
+        Es otro ajuste y otro slider en el panel, no el mismo con otro nombre. Un
+        caso que quiera probar uno sin el otro tiene que poder moverlos por
+        separado, que es justo la razón de que estén separados.
+        """
+        self.app.state.runtime_settings.set_interest_followup_minutes(minutes, datetime.now(UTC))
 
     # ------------------------------------------------------- conversación
 
@@ -455,6 +476,7 @@ class World:
         moment = at or datetime.now(UTC)
         mark = len(self.channel.sent)
         await self.app.state.booking_followups.send_due(moment)
+        await self.app.state.interest_followups.send_due(moment)
         await self.app.state.appointment_reminders.send_due(moment)
         salidas = tuple(item.text for item in self.channel.since(mark))
         self._record_system(mark, f"vencimientos disparados a {moment.isoformat()}")
@@ -465,6 +487,19 @@ class World:
         mark = len(self.channel.sent)
         result = await self.app.state.appointment_reminders.send_now(self.key)
         self._record_system(mark, f"panel: forzar recordatorio -> {result}")
+        return result
+
+    async def force_interest_followup(self) -> str:
+        """El botón "enviar seguimiento ahora" del panel, para quien no tiene cita.
+
+        Gemelo de `force_reminder` y deliberadamente distinto: aquél manda el
+        recordatorio de una cita que existe, éste retoma a alguien que nunca llegó
+        a tenerla. En el panel son dos botones que ni siquiera pueden aparecer a
+        la vez, porque uno pide cita y el otro pide que no la haya.
+        """
+        mark = len(self.channel.sent)
+        result = await self.app.state.interest_followups.send_now(self.key)
+        self._record_system(mark, f"panel: forzar seguimiento de interés -> {result}")
         return result
 
     def ocupacion(self, slot_utc: datetime) -> bool | None:
@@ -605,6 +640,13 @@ async def world(name: str, *, calendario: str | None = None, **overrides: Any):
         "calendly_signing_key": CALENDLY_SIGNING_KEY,
         # Que nada venza solo: los vencimientos los dispara el test.
         "booking_followup_poll_seconds": 3600.0,
+        # El seguimiento de interés se arma en cuanto el bot le responde a alguien
+        # sin cita, o sea en casi todos los casos. Arrancarlo en el máximo lo deja
+        # programado pero fuera del alcance de cualquier `fire_due` razonable, así
+        # que sólo aparece donde un caso lo baja a propósito (C01). Sin esto, un
+        # caso que adelanta vencimientos para ver su recordatorio se llevaría de
+        # propina un "¿sigues por ahí?" que nadie pidió medir.
+        "interest_followup_minutes": 90,
         # El correo con el que se reserva. Fijo aquí y no leído de `.env` para
         # que un caso no dependa de cómo tenga configurada su clínica quien lo
         # ejecute; el doble lo ignora y Calendly real sólo lo necesita presente.

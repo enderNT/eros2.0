@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { useApi } from "../ApiProvider";
-import type { Appointment, Contact, MuteState, PanelState, ReminderResult } from "../types";
+import type {
+  Appointment,
+  Contact,
+  FollowupResult,
+  MuteState,
+  PanelState,
+  ReminderResult,
+} from "../types";
 import { useConfirm } from "../useConfirm";
 import { AppointmentReminderSettings } from "./AppointmentReminderSettings";
 import { BookingFollowupControl } from "./BookingFollowupControl";
+import { InterestFollowupControl } from "./InterestFollowupControl";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContactList } from "./ContactList";
 import { GlobalKillSwitch } from "./GlobalKillSwitch";
@@ -83,6 +91,19 @@ export function Panel() {
         />
       </div>
 
+      <div id="interest-followup">
+        <InterestFollowupControl
+          setting={state.interest_followup}
+          onSave={(minutes) =>
+            saveGlobal(
+              "/interest-followup",
+              { minutes },
+              { interest_followup: { ...state.interest_followup, minutes } },
+            )
+          }
+        />
+      </div>
+
       <div id="appointment-reminder-settings">
         <AppointmentReminderSettings
           setting={state.appointment_reminder}
@@ -135,6 +156,13 @@ export function Panel() {
             appointment: Appointment | null;
           }>("/appointment-reminder", contactKey(contact));
           patchContact(contact.phone!, { appointment: payload.appointment });
+          return payload.result;
+        }}
+        onSendInterestFollowup={async (contact) => {
+          const payload = await call<{ result: FollowupResult }>(
+            "/interest-followup-send",
+            contactKey(contact),
+          );
           return payload.result;
         }}
       />

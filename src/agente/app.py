@@ -41,6 +41,7 @@ from .services.compaction import compact, make_summarizer
 from .services.crisis import make_classifier
 from .services.followup import BookingFollowups
 from .services.inbound import InboundService
+from .services.interest_followup import InterestFollowups
 from .services.knowledge import Knowledge
 from .services.reminders import AppointmentReminders
 from .tools.registry import build_tools
@@ -168,6 +169,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ),
         )
         app.state.booking_followups = followups
+        interest = InterestFollowups(
+            outbox=outbox,
+            appointments=appointments,
+            messages=messages,
+            mutes=SqliteMutesRepository(app.state.db),
+            channel=app.state.channel,
+            delay_minutes=lambda: runtime_settings.interest_followup_minutes(
+                cfg.interest_followup_minutes
+            ),
+        )
+        app.state.interest_followups = interest
+
+        # Los dos seguimientos cuelgan del mismo par de ganchos, y cada uno
+        # decide por su cuenta si le toca. Se encadenan aquí, en el cableado, en
+        # vez de dárselos a `InboundService`: el servicio de entrada no tiene por
+        # qué enterarse de cuántas cosas hay que avisar.
+        def on_inbound(key: ContactKey) -> None:
+            followups.cancel_for_contact(key)
+            interest.cancel_for_contact(key)
+
+        def on_outbound(key: ContactKey, text: str, sent_at: datetime) -> None:
+            followups.schedule_from_outbound(key, text, sent_at)
+            interest.schedule_from_outbound(key, text, sent_at)
+
         app.state.inbound = InboundService(
             messages,
             SqliteMutesRepository(app.state.db),
@@ -178,12 +203,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             crisis_directives=app.state.knowledge.crisis_directives(),
             debounce_seconds=cfg.debounce_seconds,
             compactor=compactor,
-            on_inbound=followups.cancel_for_contact,
-            on_outbound=followups.schedule_from_outbound,
+            on_inbound=on_inbound,
+            on_outbound=on_outbound,
         )
         followup_task = (
             asyncio.create_task(
-                _run_followups(followups, reminders, cfg.booking_followup_poll_seconds)
+                _run_followups(followups, interest, reminders, cfg.booking_followup_poll_seconds)
             )
             if app.state.db is not None
             else None
@@ -227,11 +252,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 async def _run_followups(
-    followups: BookingFollowups, reminders: AppointmentReminders, poll_seconds: float
+    followups: BookingFollowups,
+    interest: InterestFollowups,
+    reminders: AppointmentReminders,
+    poll_seconds: float,
 ) -> None:
     while True:
         try:
             await followups.send_due()
+            await interest.send_due()
             await reminders.send_due()
         except StoreError:
             log.error("booking_followup_poll_failed")

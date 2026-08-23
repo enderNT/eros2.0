@@ -1,5 +1,5 @@
 import { timestamp } from "../format";
-import type { Contact, ReminderResult } from "../types";
+import type { Contact, FollowupResult, ReminderResult } from "../types";
 import { ContactControls } from "./ContactControls";
 import { Hint } from "./Hint";
 
@@ -8,6 +8,7 @@ interface Props {
   onMute: (contact: Contact, muted: boolean, expiresIn: number | null) => Promise<void>;
   onReset: (contact: Contact) => Promise<number>;
   onSendReminder: (contact: Contact) => Promise<ReminderResult>;
+  onSendInterestFollowup: (contact: Contact) => Promise<FollowupResult>;
 }
 
 function StatusBadge({ status }: { status: string | null }) {
@@ -16,7 +17,13 @@ function StatusBadge({ status }: { status: string | null }) {
   return <>{status || "—"}</>;
 }
 
-export function ContactList({ contacts, onMute, onReset, onSendReminder }: Props) {
+export function ContactList({
+  contacts,
+  onMute,
+  onReset,
+  onSendReminder,
+  onSendInterestFollowup,
+}: Props) {
   return (
     <table id="conv-list">
       <thead>
@@ -45,6 +52,7 @@ export function ContactList({ contacts, onMute, onReset, onSendReminder }: Props
             onMute={onMute}
             onReset={onReset}
             onSendReminder={onSendReminder}
+            onSendInterestFollowup={onSendInterestFollowup}
           />
         ))}
       </tbody>
@@ -57,6 +65,7 @@ function Row({
   onMute,
   onReset,
   onSendReminder,
+  onSendInterestFollowup,
 }: { contact: Contact } & Omit<Props, "contacts">) {
   return (
     <>
@@ -87,6 +96,7 @@ function Row({
               onMute={(muted, expiresIn) => onMute(contact, muted, expiresIn)}
               onReset={() => onReset(contact)}
               onSendReminder={() => onSendReminder(contact)}
+              onSendInterestFollowup={() => onSendInterestFollowup(contact)}
             />
           </td>
         </tr>

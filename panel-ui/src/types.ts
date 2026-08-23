@@ -32,6 +32,7 @@ export interface PanelState {
   global_muted: boolean;
   number_muted: boolean;
   booking_followup: MinuteSetting;
+  interest_followup: MinuteSetting;
   appointment_reminder: MinuteSetting;
   contacts: Contact[];
 }
@@ -46,3 +47,12 @@ export interface TraceRow {
 
 /** What `send_now` reports back for a single contact's pending reminder. */
 export type ReminderResult = "sent" | "muted" | "failed" | "missing" | "already_sent";
+
+/**
+ * Lo que devuelve el envío manual del seguimiento de interés.
+ *
+ * Comparte casi todos los valores con `ReminderResult` y añade `booked`, que
+ * aquí sí puede pasar: entre programarlo y mandarlo, la persona pudo agendar —
+ * y entonces preguntarle si sigue ahí sobra.
+ */
+export type FollowupResult = ReminderResult | "booked";

@@ -41,6 +41,34 @@ class SqliteOutboxRepository:
         except sqlite3.Error as exc:
             raise StoreError(str(exc)) from exc
 
+    def schedule_interest_followup(
+        self,
+        key: ContactKey,
+        text: str,
+        due_at: datetime,
+    ) -> None:
+        """Programar —o reprogramar— el único seguimiento de interés del contacto.
+
+        Reprogramar, no acumular: el índice parcial admite una sola fila viva por
+        contacto, y cada mensaje del bot reinicia la cuenta. El plazo se mide
+        desde lo último que se dijo, que es cuando de verdad empieza el silencio.
+        """
+        try:
+            with self._conn:
+                self._conn.execute(
+                    "INSERT INTO outbox (phone_number_id, contact_phone, text, due_at, kind)"
+                    " VALUES (?, ?, ?, ?, 'interest_followup')"
+                    " ON CONFLICT (phone_number_id, contact_phone)"
+                    " WHERE kind = 'interest_followup' AND sent_at IS NULL"
+                    " DO UPDATE SET text = excluded.text, due_at = excluded.due_at",
+                    (key.phone_number_id, key.contact_phone, text, to_utc_iso(due_at)),
+                )
+        except sqlite3.Error as exc:
+            raise StoreError(str(exc)) from exc
+
+    def pending_interest_followup(self, key: ContactKey) -> OutboxRow | None:
+        return self._pending(key, "interest_followup")
+
     def schedule_appointment_reminder(
         self,
         key: ContactKey,
@@ -149,14 +177,22 @@ class SqliteOutboxRepository:
         self._cancel("appointment_event_id = ?", (calendly_event_id,))
 
     def pending_appointment_reminder(self, key: ContactKey) -> OutboxRow | None:
+        return self._pending(key, "appointment_reminder")
+
+    def _pending(self, key: ContactKey, kind: str) -> OutboxRow | None:
+        """La fila sin enviar de ese tipo para ese contacto, si la hay.
+
+        Es lo que necesita un botón "enviar ahora" del panel: saber qué se
+        mandaría antes de mandarlo.
+        """
         try:
             row = self._conn.execute(
                 "SELECT id, phone_number_id, contact_phone, text, due_at, booking_token, slot_utc,"
                 " kind, appointment_event_id FROM outbox"
                 " WHERE phone_number_id = ? AND contact_phone = ?"
-                " AND kind = 'appointment_reminder' AND sent_at IS NULL"
+                " AND kind = ? AND sent_at IS NULL"
                 " ORDER BY slot_utc, id LIMIT 1",
-                (key.phone_number_id, key.contact_phone),
+                (key.phone_number_id, key.contact_phone, kind),
             ).fetchone()
         except sqlite3.Error as exc:
             raise StoreError(str(exc)) from exc

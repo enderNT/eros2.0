@@ -147,6 +147,46 @@ def test_booking_followup_saves_and_refuses_out_of_range(settings):
         assert runtime.booking_followup_minutes(default=90) == 10
 
 
+def test_interest_followup_setting_is_its_own_control(settings):
+    """Su propio ajuste, no un alias del de reserva: mover uno no mueve el otro."""
+    with TestClient(create_app(settings)) as client:
+        _login(client)
+        assert client.post("/admin/api/interest-followup", json={"minutes": 5}).json() == {
+            "minutes": 5
+        }
+        runtime = SqliteRuntimeSettingsRepository(client.app.state.db)
+        assert runtime.interest_followup_minutes(default=60) == 5
+        assert runtime.booking_followup_minutes(default=90) == 90
+
+        # 0 vale para el de reserva ("pregunta ya") y no para éste: escribir en el
+        # mismo instante en que acabas de contestar no es un seguimiento.
+        assert client.post("/admin/api/interest-followup", json={"minutes": 0}).status_code == 422
+        assert client.post("/admin/api/interest-followup", json={"minutes": 91}).status_code == 422
+        assert runtime.interest_followup_minutes(default=60) == 5
+
+
+def test_panel_state_exposes_both_follow_up_settings(settings):
+    with TestClient(create_app(settings)) as client:
+        _login(client)
+        state = client.get("/admin/api/state").json()
+        assert state["interest_followup"] == {"minutes": 60, "min": 1, "max": 90}
+        assert state["booking_followup"]["max"] == 90
+        assert state["interest_followup"] is not state["booking_followup"]
+
+
+def test_interest_followup_send_reports_when_there_is_nothing_pending(settings):
+    with TestClient(create_app(settings)) as client:
+        _login(client)
+        response = client.post(
+            "/admin/api/interest-followup-send",
+            json={
+                "phone_number_id": settings.kapso_phone_number_id,
+                "contact_phone": "+525512345678",
+            },
+        )
+        assert response.json() == {"result": "missing"}
+
+
 def test_appointment_reminder_setting_saves_and_refuses_out_of_range(settings):
     with TestClient(create_app(settings)) as client:
         _login(client)

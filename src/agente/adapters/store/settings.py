@@ -10,6 +10,12 @@ from .db import to_utc_iso
 
 MIN_BOOKING_FOLLOWUP_MINUTES = 0
 MAX_BOOKING_FOLLOWUP_MINUTES = 90
+# El seguimiento de interés no admite 0: a diferencia del de reserva, aquí
+# "ahora mismo" significaría escribir otra vez en el mismo instante en que se
+# acaba de contestar. Un minuto es el mínimo con sentido, y el que permite
+# probarlo de punta a punta sin esperar una hora.
+MIN_INTEREST_FOLLOWUP_MINUTES = 1
+MAX_INTEREST_FOLLOWUP_MINUTES = 90
 MIN_APPOINTMENT_REMINDER_MINUTES = 1
 MAX_APPOINTMENT_REMINDER_MINUTES = 10_080  # seven days
 
@@ -36,6 +42,31 @@ class SqliteRuntimeSettingsRepository:
                     "INSERT INTO app_setting (id, booking_followup_minutes, updated_at)"
                     " VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET"
                     " booking_followup_minutes = excluded.booking_followup_minutes,"
+                    " updated_at = excluded.updated_at",
+                    (minutes, to_utc_iso(now)),
+                )
+        except sqlite3.Error as exc:
+            raise StoreError(str(exc)) from exc
+
+    def interest_followup_minutes(self, default: int) -> int:
+        try:
+            row = self._conn.execute(
+                "SELECT interest_followup_minutes FROM app_setting WHERE id = 1"
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise StoreError(str(exc)) from exc
+        return int(row["interest_followup_minutes"]) if row else default
+
+    def set_interest_followup_minutes(self, minutes: int, now: datetime) -> None:
+        if not MIN_INTEREST_FOLLOWUP_MINUTES <= minutes <= MAX_INTEREST_FOLLOWUP_MINUTES:
+            raise ValueError("interest follow-up minutes must be between 1 and 90")
+        try:
+            with self._conn:
+                self._conn.execute(
+                    "INSERT INTO app_setting (id, booking_followup_minutes,"
+                    " interest_followup_minutes, updated_at) VALUES (1, 90, ?, ?)"
+                    " ON CONFLICT(id) DO UPDATE SET"
+                    " interest_followup_minutes = excluded.interest_followup_minutes,"
                     " updated_at = excluded.updated_at",
                     (minutes, to_utc_iso(now)),
                 )

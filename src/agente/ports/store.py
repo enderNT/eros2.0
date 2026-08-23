@@ -280,6 +280,12 @@ class OutboxRepository(Protocol):
 
     def pending_appointment_reminder(self, key: ContactKey) -> OutboxRow | None: ...
 
+    def schedule_interest_followup(
+        self, key: ContactKey, text: str, due_at: datetime
+    ) -> None: ...
+
+    def pending_interest_followup(self, key: ContactKey) -> OutboxRow | None: ...
+
 
 class PurgeRepository(Protocol):
     def contact(

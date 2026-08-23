@@ -22,8 +22,10 @@ from ..adapters.store.purge import SqlitePurgeRepository
 from ..adapters.store.settings import (
     MAX_APPOINTMENT_REMINDER_MINUTES,
     MAX_BOOKING_FOLLOWUP_MINUTES,
+    MAX_INTEREST_FOLLOWUP_MINUTES,
     MIN_APPOINTMENT_REMINDER_MINUTES,
     MIN_BOOKING_FOLLOWUP_MINUTES,
+    MIN_INTEREST_FOLLOWUP_MINUTES,
     SqliteRuntimeSettingsRepository,
 )
 from ..adapters.store.traces import SqliteTracesRepository
@@ -77,6 +79,12 @@ def _runtime_settings(request: Request) -> SqliteRuntimeSettingsRepository:
 def _booking_followup_minutes(request: Request) -> int:
     return _runtime_settings(request).booking_followup_minutes(
         request.app.state.settings.booking_followup_minutes
+    )
+
+
+def _interest_followup_minutes(request: Request) -> int:
+    return _runtime_settings(request).interest_followup_minutes(
+        request.app.state.settings.interest_followup_minutes
     )
 
 
@@ -168,6 +176,11 @@ async def state(request: Request) -> dict[str, Any]:
             "min": MIN_BOOKING_FOLLOWUP_MINUTES,
             "max": MAX_BOOKING_FOLLOWUP_MINUTES,
         },
+        "interest_followup": {
+            "minutes": _interest_followup_minutes(request),
+            "min": MIN_INTEREST_FOLLOWUP_MINUTES,
+            "max": MAX_INTEREST_FOLLOWUP_MINUTES,
+        },
         "appointment_reminder": {
             "minutes": _appointment_reminder_minutes(request),
             "min": MIN_APPOINTMENT_REMINDER_MINUTES,
@@ -242,6 +255,28 @@ async def booking_followup(request: Request, body: MinutesBody) -> dict[str, Any
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"minutes": body.minutes}
+
+
+@router.post("/interest-followup", dependencies=[_guard])
+async def interest_followup(request: Request, body: MinutesBody) -> dict[str, Any]:
+    """El plazo del seguimiento a quien no llegó a agendar. Aparte del de reserva.
+
+    Son dos ajustes porque son dos decisiones: a quien abandonó una reserva se le
+    escribe antes que a quien sólo estaba preguntando.
+    """
+    try:
+        _runtime_settings(request).set_interest_followup_minutes(body.minutes, datetime.now(UTC))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"minutes": body.minutes}
+
+
+@router.post("/interest-followup-send", dependencies=[_guard])
+async def interest_followup_send(request: Request, body: ContactBody) -> dict[str, Any]:
+    """Mandar ya el seguimiento pendiente de un contacto, sin esperar su plazo."""
+    key = ContactKey(body.phone_number_id, body.contact_phone)
+    result = await request.app.state.interest_followups.send_now(key)
+    return {"result": result}
 
 
 @router.post("/appointment-reminder-settings", dependencies=[_guard])

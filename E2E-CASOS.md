@@ -121,30 +121,23 @@ Bugs abiertos:        BUG-__ , BUG-__
 
 ### C1 — Interés que se enfría: ¿hay seguimiento comercial?
 
-**Qué se prueba.** Una conversación normal de captación que llega hasta precios y se corta.
-Mide si un posible paciente que se queda a medias recibe algún empujón.
+**Qué se prueba.** Que a quien preguntó y se calló **antes de llegar a agendar** se le
+escriba una vez para retomar el contacto.
 
-**Guion.** 4–6 turnos, sin pedir cita en ningún momento:
+**Cambió de signo.** Documentaba HUECO-01: el único seguimiento que existía colgaba de un
+enlace de reserva, así que quien sólo preguntó el precio no recibía nada. Ahora hay un
+segundo seguimiento, el de **interés**, y el caso lo exige.
 
-1. `msg "hola"`
-2. `msg "vengo buscando terapia individual"`
-3. Responde a lo que pregunte el bot con una frase corta y realista (motivo, si es primera
-   vez, etc.). Improvisa **sólo** el contenido humano, nunca los comandos.
-4. `msg "y cuánto cuesta la primera consulta?"`
-5. **Corta aquí.** No mandes nada más.
+**Son dos mecanismos, no uno.** El de reserva pregunta "¿pudiste agendar tu cita para las
+4?" a quien ya tenía un horario; el de interés pregunta "¿sigues por ahí?" a quien nunca
+llegó a tenerlo. Plazos, ajustes, controles del panel y verbos del arnés separados —
+porque la clínica no trata igual a quien abandonó una reserva y a quien sólo estaba
+mirando.
 
-**Espera 3× el valor del seguimiento** (con 2 min, espera 6) y ejecuta `state`.
-
-**Criterios.**
-1. ¿El bot dio el precio de la cita de valoración ($1,000 MXN) sin inventar cifras?
-2. ¿Ofreció agendar o dejó una puerta abierta, en vez de cerrar en seco?
-3. ¿Llegó **algún** mensaje de seguimiento tras el silencio?
-
-**Cómo leerlo.** El criterio 3 va a dar `NO`, y eso es información, no un fallo del bot:
-`BookingFollowups.schedule_from_outbound` sólo programa seguimiento si el mensaje saliente
-**contenía un enlace de reserva**. Sin enlace no hay token, y sin token no hay seguimiento.
-Un interesado que sólo preguntó precio no recibe nada nunca. Regístralo como **hueco**, no
-como bug, y anota si te parece que debería existir.
+**Cómo leerlo.** El criterio 1 exige **un** aviso, no uno por turno: cada respuesta del
+bot reprograma el mismo, así que el plazo cuenta desde lo último que se dijo. El criterio
+2 vigila que no se hayan mezclado los dos mecanismos. Procedimiento y criterios en
+[`evals/casos/C01-seguimiento.md`](evals/casos/C01-seguimiento.md).
 
 ---
 
@@ -436,7 +429,7 @@ que hay que decidir es si debería.
 
 | ID | Qué no existe | ¿Debería existir? | Decisión |
 |---|---|---|---|
-| C01-3 | Seguimiento a un interesado que se enfría sin llegar a agendar | | Sigue abierto, y ahora **de otra forma**: al retirarse el flujo de enlaces ya no hay token del que colgar el seguimiento, así que necesita una percha nueva (por ejemplo, un horario ofrecido y no aceptado). |
+| C01-3 | Seguimiento a un interesado que se enfría sin llegar a agendar | **Sí** | **Cerrado.** `InterestFollowups`: se arma cuando el bot responde a alguien sin cita y se cancela si contesta, si agenda o si la conversación pasa a un humano. Ajuste propio (1–90 min), control propio en el panel y botón *Enviar seguimiento ahora* por contacto. |
 | C05-2 | La cita de un reagendado sin `utm_content` se descarta en silencio | **Sí** | **Cerrado.** Se atribuye por el teléfono que nosotros mismos escribimos en Calendly al reservar, exigiendo que sea un contacto con perfil; el paciente recibe aviso de que su cita se movió. |
 | C09-1 | Mover una cita creaba una segunda y dejaba viva la primera | **Sí** | **Cerrado en código, no en el prompt.** `book_for_contact` cancela la cita anterior al crear la nueva, así que no depende de que el modelo encadene dos herramientas bien. |
 
