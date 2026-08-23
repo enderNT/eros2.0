@@ -85,13 +85,35 @@ alta. La solución es marcarla opcional en Calendly.
 
 ## 2. Desplegar y obtener la URL pública
 
-- Desplegar en Coolify desde `v3-rebuild`.
-- **Declarar un volumen persistente** montado donde apunta `DB_PATH`. Sin él, cada redeploy
-  borra el historial, los perfiles y las citas.
-- Cargar todas las variables de `.env.example` en el entorno de Coolify.
+En Coolify, tipo de recurso **Docker Compose**, rama `v3-rebuild`, y en *Docker Compose
+Location* apuntar a **`docker-compose.coolify.yml`**.
+
+Ese fichero es el de despliegue; el `docker-compose.yml` de al lado es para tu máquina. La
+diferencia es una sola línea con consecuencias: el local publica el puerto 8000 en el host
+para que puedas entrar por `localhost:8000`, y en un servidor compartido publicar un puerto
+es justo lo que revienta el despliegue si otra aplicación ya lo tiene. El de Coolify sólo
+expone el contenedor a la red interna y deja que el proxy lo alcance por ahí.
+
+- **Las variables aparecen solas** en la pestaña *Environment Variables* al guardar: Coolify
+  lee las `${...}` del fichero. Hay que rellenar las nueve obligatorias; las demás traen
+  valor por defecto y sólo se tocan si se quiere otro.
+- **El volumen ya viene declarado** (`agente-data` montado en `/data`), y `DB_PATH` apunta
+  dentro. No hay nada que configurar a mano, pero tampoco hay que quitarlo: sin él la
+  aplicación arranca igual, `/health` dice `ok`, y cada redespliegue borra el historial, los
+  perfiles y las citas sin un solo error.
 - **Si ya hay una base con datos, copiarla antes de desplegar.** Las migraciones corren
   solas al arrancar y algunas reconstruyen tablas enteras; la copia es la única vuelta atrás.
+- **El dominio** lo genera Coolify a partir de `SERVICE_FQDN_AGENTE_8000`. Si se prefiere uno
+  propio, se escribe en la pestaña *Domains* de la aplicación y esa variable se deja vacía.
 - Verificar: `curl https://<URL>/health` → `{"status":"ok",...,"database":"ok"}`.
+
+**El panel no se despliega aparte.** El `Dockerfile` compila el front con Vite en su primera
+etapa y lo copia dentro de la imagen, así que la misma aplicación lo sirve en
+`https://<URL>/admin`. Se entra con `PANEL_PASSWORD`.
+
+Comprobar que el volumen quedó bien **no** se hace con `/health`, que dice `ok` en los dos
+casos: se manda un mensaje al bot, se redespliega, y se mira si la conversación sigue en el
+panel.
 
 Anotar la URL. En los pasos siguientes es `<URL>`.
 

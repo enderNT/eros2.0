@@ -1,0 +1,77 @@
+# Despliegue en Coolify. El de al lado (`docker-compose.yml`) es para tu máquina.
+#
+# Son dos ficheros por una sola diferencia que no se puede reconciliar: en local
+# quieres el puerto publicado en el host para entrar por `localhost:8000`, y en
+# un servidor compartido publicarlo es justo lo que rompe el despliegue cuando
+# otra aplicación ya tiene ese puerto. Aquí el contenedor sólo se expone a la red
+# interna y el proxy de Coolify lo alcanza por ahí.
+#
+# En Coolify: tipo de recurso **Docker Compose**, y en "Docker Compose Location"
+# apuntar a este fichero. Las variables de abajo aparecen solas en la pestaña
+# Environment Variables al guardar, porque Coolify lee las `${...}` de aquí.
+services:
+  agente:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # `expose` y no `ports`: el contenedor queda accesible para el proxy de
+    # Coolify, sin ocupar ningún puerto del host.
+    expose:
+      - "8000"
+    volumes:
+      # La base vive aquí. Sin este volumen la aplicación arranca igual,
+      # `/health` dice `ok`, y cada redespliegue borra historial, perfiles y
+      # citas sin un solo error. Es el fallo más caro de este fichero.
+      - agente-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).status == 200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    environment:
+      # Coolify genera el dominio y lo enruta al puerto 8000 de este servicio.
+      # También se puede dejar en blanco y escribir el dominio a mano en la
+      # pestaña Domains de la aplicación; esta variable sólo ahorra ese paso.
+      SERVICE_FQDN_AGENTE_8000: ${SERVICE_FQDN_AGENTE_8000}
+
+      # Rutas dentro del contenedor. Fijas a propósito: `DB_PATH` tiene que caer
+      # dentro del volumen de arriba, y el contenido lo pone el Dockerfile.
+      DB_PATH: /data/agente.db
+      CONTENT_DIR: /app/content
+
+      # --- obligatorias: sin una de éstas la aplicación no arranca -----------
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      KAPSO_API_KEY: ${KAPSO_API_KEY}
+      KAPSO_PHONE_NUMBER_ID: ${KAPSO_PHONE_NUMBER_ID}
+      KAPSO_WEBHOOK_SECRET: ${KAPSO_WEBHOOK_SECRET}
+      CALENDLY_TOKEN: ${CALENDLY_TOKEN}
+      CALENDLY_EVENT_TYPE_URI: ${CALENDLY_EVENT_TYPE_URI}
+      PANEL_PASSWORD: ${PANEL_PASSWORD}
+      PANEL_SESSION_SECRET: ${PANEL_SESSION_SECRET}
+      # Se envía textual al paciente. Arrancar con un marcador `<<pendiente>>`
+      # está prohibido por el validador de `config.py`, y es a propósito.
+      CRISIS_MESSAGE: ${CRISIS_MESSAGE}
+
+      # --- Calendly: sin éstas reserva, pero peor --------------------------
+      # Vacía, cada cita queda a nombre de un buzón que no existe.
+      CALENDLY_INVITEE_EMAIL: ${CALENDLY_INVITEE_EMAIL}
+      # La misma que se registró en la suscripción del webhook. Si no coinciden,
+      # toda entrega de Calendly da 401 y no hay ningún otro síntoma.
+      CALENDLY_SIGNING_KEY: ${CALENDLY_SIGNING_KEY}
+      # La dirección que se le dice al paciente en la confirmación y en el
+      # recordatorio. Vacía, los dos mensajes la omiten en vez de inventarla.
+      CALENDLY_LOCATION_VALUE: ${CALENDLY_LOCATION_VALUE}
+      CALENDLY_TIMEZONE: ${CALENDLY_TIMEZONE:-America/Mexico_City}
+
+      # --- comportamiento: los valores por defecto son los buenos -----------
+      INTEREST_FOLLOWUP_MINUTES: ${INTEREST_FOLLOWUP_MINUTES:-60}
+      APPOINTMENT_REMINDER_MINUTES: ${APPOINTMENT_REMINDER_MINUTES:-1440}
+      INTEREST_FOLLOWUP_ENABLED: ${INTEREST_FOLLOWUP_ENABLED:-true}
+      APPOINTMENT_REMINDER_ENABLED: ${APPOINTMENT_REMINDER_ENABLED:-true}
+      DEBOUNCE_SECONDS: ${DEBOUNCE_SECONDS:-4.0}
+      OUTBOX_POLL_SECONDS: ${OUTBOX_POLL_SECONDS:-15.0}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+volumes:
+  agente-data:
