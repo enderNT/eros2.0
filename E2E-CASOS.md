@@ -448,7 +448,7 @@ avisos — un tercero sería el bot persiguiendo solo.
 
 ---
 
-## Dónde se ven los resultados## Dónde se ven los resultados
+## Dónde se ven los resultados
 
 Lo que las pruebas encuentran **no se apunta a mano aquí**. Se destila solo:
 
