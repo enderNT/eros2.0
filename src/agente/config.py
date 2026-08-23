@@ -71,10 +71,11 @@ class Settings(BaseSettings):
     reply_max_chunks: int = 3
     reply_chunk_chars: int = 600
     reply_chunk_delay_seconds: float = 1.0
-    booking_followup_minutes: int = 90
-    booking_followup_poll_seconds: float = 15.0
-    # Seguimiento a quien mostró interés y se enfrió antes de agendar. Es otro
-    # momento y otro motivo que el de reserva, así que es otro ajuste.
+    # Cada cuánto despierta el bucle que vacía el outbox. Un solo intervalo para
+    # los dos avisos: lo que cambia entre ellos es cuándo vencen, no cada cuánto
+    # se mira si algo venció.
+    outbox_poll_seconds: float = 15.0
+    # Minutos de silencio antes de retomar a quien preguntó y no llegó a agendar.
     interest_followup_minutes: int = 60
     appointment_reminder_minutes: int = 1440
     # Los dos avisos automáticos se pueden apagar desde el panel. Estos son sólo

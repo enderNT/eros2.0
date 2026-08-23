@@ -9,10 +9,9 @@ is real, not mocked.
 Subcommands:
 
   msg "texto"      simulate an inbound WhatsApp message from the test contact
-  tokens           list the booking tokens issued so far (newest first)
-  book [token]     simulate Calendly's invitee.created for that token
+  book --slot ISO  simulate an invitee.created we did not make (clinic, host move)
                    (default: the newest one)
-  cancel [token]   simulate invitee.canceled for that token's appointment
+  cancel           simulate invitee.canceled for the contact's latest appointment
   state            dump what the database says about the test contact
   reset            wipe the test contact's history, profile and appointments
 
@@ -31,7 +30,7 @@ import sqlite3
 import sys
 import time
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import httpx
 
@@ -83,11 +82,15 @@ def cmd_msg(args: argparse.Namespace) -> int:
 
 
 def _last_message_id() -> int:
-    row = _db().execute(
-        "SELECT COALESCE(MAX(id), 0) AS id FROM message"
-        " WHERE phone_number_id = ? AND contact_phone = ?",
-        (PHONE_NUMBER_ID, CONTACT),
-    ).fetchone()
+    row = (
+        _db()
+        .execute(
+            "SELECT COALESCE(MAX(id), 0) AS id FROM message"
+            " WHERE phone_number_id = ? AND contact_phone = ?",
+            (PHONE_NUMBER_ID, CONTACT),
+        )
+        .fetchone()
+    )
     return int(row["id"])
 
 
@@ -96,12 +99,16 @@ def _print_new_replies(after_id: int, wait: float) -> None:
     deadline = time.monotonic() + wait
     seen: set[int] = set()
     while time.monotonic() < deadline:
-        rows = _db().execute(
-            "SELECT id, direction, text FROM message"
-            " WHERE phone_number_id = ? AND contact_phone = ? AND id > ?"
-            " AND direction = 'outbound' ORDER BY id",
-            (PHONE_NUMBER_ID, CONTACT, after_id),
-        ).fetchall()
+        rows = (
+            _db()
+            .execute(
+                "SELECT id, direction, text FROM message"
+                " WHERE phone_number_id = ? AND contact_phone = ? AND id > ?"
+                " AND direction = 'outbound' ORDER BY id",
+                (PHONE_NUMBER_ID, CONTACT, after_id),
+            )
+            .fetchall()
+        )
         for row in rows:
             if row["id"] not in seen:
                 seen.add(row["id"])
@@ -114,29 +121,6 @@ def _print_new_replies(after_id: int, wait: float) -> None:
 
 
 # -------------------------------------------------------------------- calendly
-
-
-def cmd_tokens(_args: argparse.Namespace) -> int:
-    rows = _db().execute(
-        "SELECT token, slot_utc, created_at FROM booking_token"
-        " WHERE phone_number_id = ? AND contact_phone = ? ORDER BY created_at DESC",
-        (PHONE_NUMBER_ID, CONTACT),
-    ).fetchall()
-    if not rows:
-        print("(sin tokens — pedile un horario al bot primero)")
-        return 1
-    for row in rows:
-        print(f"{row['token']}  slot={row['slot_utc']}  emitido={row['created_at']}")
-    return 0
-
-
-def _newest_token() -> sqlite3.Row | None:
-    return _db().execute(
-        "SELECT token, slot_utc FROM booking_token"
-        " WHERE phone_number_id = ? AND contact_phone = ?"
-        " ORDER BY created_at DESC LIMIT 1",
-        (PHONE_NUMBER_ID, CONTACT),
-    ).fetchone()
 
 
 def _post_calendly(payload: dict) -> int:
@@ -163,15 +147,17 @@ def _post_calendly(payload: dict) -> int:
 
 
 def cmd_book(args: argparse.Namespace) -> int:
-    token, slot = args.token, args.slot
-    if token is None:
-        row = _newest_token()
-        if row is None:
-            print("(sin tokens — pedile un horario al bot primero)")
-            return 1
-        token, slot = row["token"], row["slot_utc"]
+    """Simular una reserva hecha fuera de la conversación: la clínica, o un cambio
+    de hora desde el panel de Calendly.
+
+    Ya no hay token que pasar. El agendamiento por enlace desapareció cuando
+    `agendar_cita` empezó a reservar por API, así que lo único que queda para
+    saber de quién es una reserva ajena es el teléfono — y tiene que ser el de un
+    contacto del que ya tengamos perfil.
+    """
+    slot = args.slot
     event = args.event or f"https://api.calendly.com/scheduled_events/{uuid.uuid4()}"
-    print(f"→ invitee.created  token={token}")
+    print(f"→ invitee.created  slot={slot}")
     # Captured before the POST: printing from `last - 1` would re-show the previous
     # message and make an idempotent replay look like a duplicate send.
     before = _last_message_id()
@@ -182,13 +168,9 @@ def cmd_book(args: argparse.Namespace) -> int:
                 "event": event,
                 "name": args.name,
                 "email": args.email,
-                "tracking": {"utm_content": token},
-                # Sin esto el servicio descarta la reserva por
-                # `phone_mismatch`: el enlace personalizado no basta como
-                # identidad, el teléfono que recoge Calendly la corrobora.
-                "questions_and_answers": [
-                    {"question": "Número de teléfono", "answer": CONTACT}
-                ],
+                # Sin esto el servicio la descarta: el teléfono es lo único que
+                # queda para atribuirla, y lo escribimos nosotros en Calendly.
+                "questions_and_answers": [{"question": "Número de teléfono", "answer": CONTACT}],
                 "scheduled_event": {"start_time": slot} if slot else {},
             },
         }
@@ -213,12 +195,16 @@ def cmd_cancel(args: argparse.Namespace) -> int:
 
 
 def _latest_event_uri() -> str | None:
-    row = _db().execute(
-        "SELECT calendly_event_id FROM appointment"
-        " WHERE phone_number_id = ? AND contact_phone = ? AND status = 'scheduled'"
-        " ORDER BY id DESC LIMIT 1",
-        (PHONE_NUMBER_ID, CONTACT),
-    ).fetchone()
+    row = (
+        _db()
+        .execute(
+            "SELECT calendly_event_id FROM appointment"
+            " WHERE phone_number_id = ? AND contact_phone = ? AND status = 'scheduled'"
+            " ORDER BY id DESC LIMIT 1",
+            (PHONE_NUMBER_ID, CONTACT),
+        )
+        .fetchone()
+    )
     return row["calendly_event_id"] if row else None
 
 
@@ -274,8 +260,11 @@ def cmd_state(_args: argparse.Namespace) -> int:
         " WHERE phone_number_id = ? AND contact_phone = ?",
         where,
     ).fetchone()
-    print(f"watermark={summary['watermark_message_id']}\n{summary['text']}" if summary
-          else "(sin compactar todavía)")
+    print(
+        f"watermark={summary['watermark_message_id']}\n{summary['text']}"
+        if summary
+        else "(sin compactar todavía)"
+    )
 
     print("\n-- últimos 10 mensajes --")
     for row in conn.execute(
@@ -290,12 +279,16 @@ def cmd_state(_args: argparse.Namespace) -> int:
 
 def cmd_traces(args: argparse.Namespace) -> int:
     """Model calls, newest first, grouped by turn — cost and latency per turn."""
-    rows = _db().execute(
-        "SELECT turn_id, model, tokens_in, tokens_out, cache_read_tokens, latency_ms,"
-        " stop_reason, tools_called, created_at FROM llm_trace"
-        " ORDER BY id DESC LIMIT ?",
-        (args.limit,),
-    ).fetchall()
+    rows = (
+        _db()
+        .execute(
+            "SELECT turn_id, model, tokens_in, tokens_out, cache_read_tokens, latency_ms,"
+            " stop_reason, tools_called, created_at FROM llm_trace"
+            " ORDER BY id DESC LIMIT ?",
+            (args.limit,),
+        )
+        .fetchall()
+    )
     if not rows:
         print("(sin trazas todavía)")
         return 1
@@ -308,8 +301,7 @@ def cmd_traces(args: argparse.Namespace) -> int:
         print(
             f"  {row['model']:<28} in={row['tokens_in']:<6} out={row['tokens_out']:<5}"
             f" cache={row['cache_read_tokens']:<6} {row['latency_ms']:>5}ms"
-            f"  stop={row['stop_reason']}"
-            + (f"  tools={','.join(tools)}" if tools else "")
+            f"  stop={row['stop_reason']}" + (f"  tools={','.join(tools)}" if tools else "")
         )
     return 0
 
@@ -319,7 +311,7 @@ def cmd_reset(_args: argparse.Namespace) -> int:
     conn = _db()
     where = (PHONE_NUMBER_ID, CONTACT)
     with conn:
-        for table in ("message", "summary", "appointment", "booking_token", "mute", "profile"):
+        for table in ("message", "summary", "appointment", "mute", "profile"):
             conn.execute(
                 f"DELETE FROM {table} WHERE phone_number_id = ? AND contact_phone = ?", where
             )
@@ -329,7 +321,9 @@ def cmd_reset(_args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     subs = parser.add_subparsers(dest="command", required=True)
 
     msg = subs.add_parser("msg", help="mensaje entrante del paciente")
@@ -337,11 +331,8 @@ def main() -> int:
     msg.add_argument("--wait", type=float, default=45, help="segundos a esperar la respuesta")
     msg.set_defaults(func=cmd_msg)
 
-    subs.add_parser("tokens", help="tokens de reserva emitidos").set_defaults(func=cmd_tokens)
-
-    book = subs.add_parser("book", help="simular que el paciente completó la reserva")
-    book.add_argument("token", nargs="?")
-    book.add_argument("--slot", help="ISO UTC; por defecto el del token")
+    book = subs.add_parser("book", help="simular una reserva hecha fuera de la conversación")
+    book.add_argument("--slot", help="ISO UTC de la cita")
     book.add_argument("--event", help="event uri; por defecto uno nuevo")
     book.add_argument("--name", default="Paciente de Prueba")
     book.add_argument("--email", default="prueba@example.com")

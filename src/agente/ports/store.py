@@ -88,16 +88,6 @@ class AppointmentRow:
 
 
 @dataclass(frozen=True, slots=True)
-class BookingTokenRow:
-    """What a Calendly `utm_content` value resolves back to."""
-
-    token: str
-    key: ContactKey
-    slot_utc: datetime
-    created_at: datetime
-
-
-@dataclass(frozen=True, slots=True)
 class OutboxRow:
     """One pending outbound follow-up, consumed before it is sent."""
 
@@ -105,17 +95,12 @@ class OutboxRow:
     key: ContactKey
     text: str
     due_at: datetime
-    booking_token: str | None
     slot_utc: datetime | None
     kind: str
     appointment_event_id: str | None
 
 
 class RuntimeSettingsRepository(Protocol):
-    def booking_followup_minutes(self, default: int) -> int: ...
-
-    def set_booking_followup_minutes(self, minutes: int, now: datetime) -> None: ...
-
     def interest_followup_minutes(self, default: int) -> int: ...
 
     def set_interest_followup_minutes(self, minutes: int, now: datetime) -> None: ...
@@ -251,22 +236,7 @@ class AppointmentsRepository(Protocol):
     def scheduled(self) -> list[AppointmentRow]: ...
 
 
-class BookingTokensRepository(Protocol):
-    def issue(self, token: str, key: ContactKey, slot_utc: datetime, now: datetime) -> None: ...
-
-    def resolve(self, token: str) -> BookingTokenRow | None: ...
-
-
 class OutboxRepository(Protocol):
-    def schedule_booking_followup(
-        self,
-        key: ContactKey,
-        booking_token: str,
-        slot_utc: datetime,
-        text: str,
-        due_at: datetime,
-    ) -> None: ...
-
     def schedule_appointment_reminder(
         self,
         key: ContactKey,
@@ -287,8 +257,6 @@ class OutboxRepository(Protocol):
     def cancel_for_contact(self, key: ContactKey, *, kind: str | None = None) -> None: ...
 
     def cancel_kind(self, kind: str) -> None: ...
-
-    def cancel_for_token(self, booking_token: str) -> None: ...
 
     def cancel_for_appointment(self, calendly_event_id: str) -> None: ...
 

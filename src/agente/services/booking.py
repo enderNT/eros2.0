@@ -1,10 +1,14 @@
-"""Where a Calendly slot link becomes a real appointment (TASKS T9b).
+"""Where a Calendly slot becomes a real appointment.
 
-`agendar_cita` only hands the patient a booking page — Calendly has no API to
-book on their behalf — so nothing in our database says "appointment" until
-Calendly tells us the invitee was created. This service is that moment: it
-resolves the opaque token we put in the link, writes the row, updates the
-durable profile and sends the one confirmation the patient gets.
+Two doors lead here. `book_for_contact` is the front one: `agendar_cita` reserves
+through the Scheduling API and this writes the row. `handle` is the back one —
+Calendly's webhook, which reports bookings we did not make: the clinic adding
+somebody by hand, or a host-side reschedule.
+
+There used to be a third. The bot handed out a booking page carrying an opaque
+token, and this service resolved that token to find out whose booking had come
+back. Booking on the patient's behalf removed the question, and the token, the
+link and the follow-up that chased it went with it (migration 0009).
 
 Two properties matter more than anything else here:
 
@@ -12,8 +16,9 @@ Two properties matter more than anything else here:
   `calendly_event_id` must never produce a second appointment row or a second
   WhatsApp message — a patient receiving "tu cita quedó confirmada" twice reads
   it as two appointments.
-* **Silence on an unknown token.** A booking with no token is a human booking
-  made outside our conversation. It is logged and ignored, never guessed at.
+* **Silence on a booking we cannot attribute.** Without a token the only handle
+  left is the phone number, and it has to belong to a contact we already know.
+  Anything else is somebody who booked from the public page.
 """
 
 from __future__ import annotations
@@ -34,7 +39,6 @@ from ..ports.channel import Channel
 from ..ports.store import (
     AppointmentRow,
     AppointmentsRepository,
-    BookingTokensRepository,
     ContactsRepository,
     MessagesRepository,
     OutboxRepository,
@@ -91,7 +95,6 @@ class BookingService:
     def __init__(
         self,
         *,
-        tokens: BookingTokensRepository,
         appointments: AppointmentsRepository,
         contacts: ContactsRepository,
         messages: MessagesRepository,
@@ -105,7 +108,7 @@ class BookingService:
         address: str = "",
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
-        self._tokens, self._appointments = tokens, appointments
+        self._appointments = appointments
         self._contacts, self._messages = contacts, messages
         self._outbox, self._channel = outbox, channel
         self._reminders = reminders
@@ -214,34 +217,10 @@ class BookingService:
         if self._appointments.find(event_uri) is not None:
             log.info("calendly_delivery_duplicate", extra={"event": CREATED})
             return
-        token = str((payload.get("tracking") or {}).get("utm_content") or "")
-        record = self._tokens.resolve(token) if token else None
-        if record is None:
-            await self._created_without_token(event_uri, payload)
-            return
-        if not _matches_contact_phone(payload, record.key.contact_phone):
-            # The personalized URL alone is not proof of identity: it can be
-            # forwarded. The number collected by Calendly must corroborate it.
-            log.info("calendly_booking_phone_mismatch")
-            return
-        self._outbox.cancel_for_token(token)
-        now = self._now()
-        slot = _start_time(payload) or record.slot_utc
-        self._contacts.ensure_contact(record.key, now)
-        try:
-            self._appointments.add(record.key, event_uri, slot, now)
-        except StoreError:
-            # The unique index on calendly_event_id is the backstop for two
-            # deliveries racing past the `find` check above.
-            log.info("calendly_delivery_duplicate", extra={"event": CREATED})
-            return
-        self._save_profile(record.key, slot, now, payload)
-        if self._reminders is not None:
-            self._reminders.schedule(record.key, event_uri, slot, now)
-        await self._notify(record.key, confirmation_text(slot, self._timezone, now, self._address))
+        await self._created_by_phone(event_uri, payload)
 
-    async def _created_without_token(self, event_uri: str, payload: dict[str, Any]) -> None:
-        """A booking that did not come from a link of ours. Usually the clinic.
+    async def _created_by_phone(self, event_uri: str, payload: dict[str, Any]) -> None:
+        """A booking we did not make ourselves. Usually the clinic.
 
         Once we book on the patient's behalf we write their WhatsApp number into
         Calendly's phone question ourselves, and Calendly carries the answers over
@@ -272,6 +251,11 @@ class BookingService:
         if self._reminders is not None:
             self._reminders.schedule(key, event_uri, slot, now)
         log.info("calendly_booking_attributed_by_phone")
+        # Siempre "tuvimos que mover tu cita", aunque el payload no distinga una
+        # mudanza de un alta hecha a mano por la clínica. Se probó decidirlo por
+        # si el contacto ya tenía cita, y es falso justo cuando importa: en un
+        # reagendado Calendly manda primero `canceled` y luego `created`, así que
+        # para cuando llega el alta ya no queda ninguna cita a la vista.
         await self._notify(key, moved_text(slot, self._timezone, now))
 
     def _key_from_phone(self, payload: dict[str, Any]) -> ContactKey | None:

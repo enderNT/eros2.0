@@ -1,4 +1,9 @@
-"""Durable, one-shot booking follow-ups."""
+"""La cola durable de avisos automáticos: recordatorios y seguimientos.
+
+Dos tipos, no tres. El seguimiento de reserva vivía aquí mientras el bot mandaba
+enlaces de Calendly; desde que reservamos por API no hay enlace del que colgar y
+se fue con su columna `booking_token` (migración 0009).
+"""
 
 from __future__ import annotations
 
@@ -14,32 +19,6 @@ from .db import parse_utc_iso, to_utc_iso
 class SqliteOutboxRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
-
-    def schedule_booking_followup(
-        self,
-        key: ContactKey,
-        booking_token: str,
-        slot_utc: datetime,
-        text: str,
-        due_at: datetime,
-    ) -> None:
-        try:
-            with self._conn:
-                self._conn.execute(
-                    "INSERT INTO outbox (phone_number_id, contact_phone, text, due_at,"
-                    " booking_token, slot_utc, kind) VALUES (?, ?, ?, ?, ?, ?, 'booking_followup')"
-                    " ON CONFLICT(booking_token) WHERE booking_token IS NOT NULL DO NOTHING",
-                    (
-                        key.phone_number_id,
-                        key.contact_phone,
-                        text,
-                        to_utc_iso(due_at),
-                        booking_token,
-                        to_utc_iso(slot_utc),
-                    ),
-                )
-        except sqlite3.Error as exc:
-            raise StoreError(str(exc)) from exc
 
     def schedule_interest_followup(
         self,
@@ -117,7 +96,7 @@ class SqliteOutboxRepository:
                 values += (kind,)
             values += (limit,)
             rows = self._conn.execute(
-                "SELECT id, phone_number_id, contact_phone, text, due_at, booking_token, slot_utc,"
+                "SELECT id, phone_number_id, contact_phone, text, due_at, slot_utc,"
                 " kind, appointment_event_id FROM outbox WHERE sent_at IS NULL AND due_at <= ?"
                 f"{filter_sql} ORDER BY due_at, id LIMIT ?",
                 values,
@@ -130,7 +109,6 @@ class SqliteOutboxRepository:
                 key=ContactKey(row["phone_number_id"], row["contact_phone"]),
                 text=row["text"],
                 due_at=parse_utc_iso(row["due_at"]),
-                booking_token=row["booking_token"],
                 slot_utc=parse_utc_iso(row["slot_utc"]) if row["slot_utc"] else None,
                 kind=row["kind"],
                 appointment_event_id=row["appointment_event_id"],
@@ -155,9 +133,9 @@ class SqliteOutboxRepository:
 
         `kind` is not optional in spirit. Without it this deletes *everything*
         pending for the contact, and the caller that runs on every inbound
-        message only ever meant to drop the booking follow-up — it was silently
-        taking appointment reminders with it, so any patient who wrote a single
-        message after booking never got reminded.
+        message only ever meant to drop that contact's follow-up — it was
+        silently taking the appointment reminder with it, so any patient who
+        wrote a single message after booking never got reminded.
         """
         if kind is None:
             self._cancel(
@@ -180,9 +158,6 @@ class SqliteOutboxRepository:
         """
         self._cancel("kind = ?", (kind,))
 
-    def cancel_for_token(self, booking_token: str) -> None:
-        self._cancel("booking_token = ?", (booking_token,))
-
     def cancel_for_appointment(self, calendly_event_id: str) -> None:
         self._cancel("appointment_event_id = ?", (calendly_event_id,))
 
@@ -197,7 +172,7 @@ class SqliteOutboxRepository:
         """
         try:
             row = self._conn.execute(
-                "SELECT id, phone_number_id, contact_phone, text, due_at, booking_token, slot_utc,"
+                "SELECT id, phone_number_id, contact_phone, text, due_at, slot_utc,"
                 " kind, appointment_event_id FROM outbox"
                 " WHERE phone_number_id = ? AND contact_phone = ?"
                 " AND kind = ? AND sent_at IS NULL"
@@ -213,7 +188,6 @@ class SqliteOutboxRepository:
             key=ContactKey(row["phone_number_id"], row["contact_phone"]),
             text=row["text"],
             due_at=parse_utc_iso(row["due_at"]),
-            booking_token=row["booking_token"],
             slot_utc=parse_utc_iso(row["slot_utc"]) if row["slot_utc"] else None,
             kind=row["kind"],
             appointment_event_id=row["appointment_event_id"],

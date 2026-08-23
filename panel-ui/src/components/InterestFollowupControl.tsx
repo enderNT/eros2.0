@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import type { ToggleableMinuteSetting } from "../types";
+import type { MinuteSetting } from "../types";
 import { BehaviourSwitch } from "./BehaviourSwitch";
 import { Hint } from "./Hint";
 
@@ -8,7 +8,7 @@ import { Hint } from "./Hint";
 const SLIDER_STEPS = [1, 2, 3, 5, 6, 9, 10, 15, 18, 30, 45, 90];
 
 interface Props {
-  setting: ToggleableMinuteSetting;
+  setting: MinuteSetting;
   onSave: (minutes: number) => Promise<boolean>;
   onToggle: (enabled: boolean) => Promise<boolean>;
 }

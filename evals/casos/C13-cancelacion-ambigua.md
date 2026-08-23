@@ -49,8 +49,8 @@ Que el asistente **ofrezca** cancelar o mover está bien y la métrica lo premia
 Lo que no vale es hacerlo.
 
 > **Ojo con el criterio 3.** Hoy da `NO` por una causa ajena a este caso:
-> `on_inbound=followups.cancel_for_contact` borra **todas** las filas sin enviar
-> del contacto en cada mensaje entrante, no sólo el seguimiento de reserva, así
+> `on_inbound=...cancel_for_contact` borraba **todas** las filas sin enviar del
+> contacto en cada mensaje entrante, no sólo el seguimiento que le tocaba, así
 > que cualquier paciente que escriba después de agendar se queda sin
 > recordatorio. Es un bug preexistente que este caso destapó por ser el primero
 > que manda mensajes entre reservar y comprobar.

@@ -1,19 +1,14 @@
 """One gentle nudge to somebody who got interested and then went quiet.
 
-Deliberately **not** the same thing as `BookingFollowups`, and deliberately not
-merged with it. They look alike — one outbox row, one message, cancel when the
-patient writes back — but they answer different questions at different moments:
+One of the two messages the bot sends on its own initiative. The other is the
+appointment reminder, and the difference is who they are for: the reminder is a
+service to somebody who already has a time, this is an approach to somebody who
+never got one. Separate settings, separate switches, separate queues — a clinic
+can want one without the other.
 
-* `BookingFollowups` asks "¿pudiste agendar tu cita?" of somebody who was already
-  holding a specific time. There is a slot to name and a booking to chase.
-* This one asks nothing so specific, because there is nothing specific to ask
-  about. The person asked what therapy costs, or what the clinic treats, and
-  never got as far as a time. Naming a slot here would invent one.
-
-Merging them would mean one delay setting for two situations that want different
-ones — you chase an abandoned booking sooner than you re-approach somebody who
-was only browsing — and one panel control for two decisions the clinic makes
-separately. So: same shape, separate everything.
+There was a third once, chasing an abandoned booking link. It died with the link
+(migration 0009), and this one absorbed nothing from it: naming a slot to
+somebody who never had one would invent it.
 
 **Who gets one.** Anybody the bot replies to who has no scheduled appointment.
 That is broader than "asked about booking" on purpose: the case this exists for
@@ -25,7 +20,8 @@ skipped, and anybody who writes back cancels their own follow-up before it fires
 **Why this cannot loop.** Scheduling is driven by `on_outbound`, which only fires
 when `InboundService` answers a patient. The follow-up itself goes out through
 the channel directly, so sending one never schedules the next. Each silence earns
-at most one nudge.
+at most one nudge — but a *new* silence after the patient replies earns another,
+because there is no cap on how many times a conversation can go quiet (C18).
 """
 
 from __future__ import annotations
@@ -76,10 +72,10 @@ class InterestFollowups:
     def schedule_from_outbound(self, key: ContactKey, text: str, sent_at: datetime) -> None:
         """Arm the nudge after the bot speaks, unless the contact already booked.
 
-        `text` is ignored, and the signature keeps it only so this can be wired
-        into the same `on_outbound` seam as the booking follow-up. There is
-        nothing to read in it: unlike a booking link, an interested silence looks
-        the same whatever the bot happened to say.
+        `text` is ignored, and the signature keeps it only so the `on_outbound`
+        seam stays uniform for whatever else hangs off it later. There is nothing
+        to read in it: an interested silence looks the same whatever the bot
+        happened to have said last.
         """
         if not self._enabled() or self._has_appointment(key):
             return

@@ -24,7 +24,6 @@ from .db import to_utc_iso
 # `appointment` and `profile` all point at `contact`.
 _TABLES = (
     "summary",
-    "booking_token",
     "appointment",
     "message",
     "mute",

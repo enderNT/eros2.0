@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { minuteLabel } from "../format";
-import type { ToggleableMinuteSetting } from "../types";
+import type { MinuteSetting } from "../types";
 import { BehaviourSwitch } from "./BehaviourSwitch";
 import { Hint } from "./Hint";
 
@@ -19,7 +19,7 @@ const PRESETS: ReadonlyArray<[number, string]> = [
 ];
 
 interface Props {
-  setting: ToggleableMinuteSetting;
+  setting: MinuteSetting;
   onSave: (minutes: number) => Promise<boolean>;
   onToggle: (enabled: boolean) => Promise<boolean>;
 }

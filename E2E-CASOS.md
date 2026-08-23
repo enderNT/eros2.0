@@ -125,18 +125,19 @@ Bugs abiertos:        BUG-__ , BUG-__
 escriba una vez para retomar el contacto.
 
 **Cambió de signo.** Documentaba HUECO-01: el único seguimiento que existía colgaba de un
-enlace de reserva, así que quien sólo preguntó el precio no recibía nada. Ahora hay un
-segundo seguimiento, el de **interés**, y el caso lo exige.
+enlace de reserva, así que quien sólo preguntó el precio no recibía nada. Ese seguimiento
+ya no existe —murió con el enlace, migración 0009— y en su lugar hay uno que sí llega a
+quien nunca agendó.
 
-**Son dos mecanismos, no uno.** El de reserva pregunta "¿pudiste agendar tu cita para las
-4?" a quien ya tenía un horario; el de interés pregunta "¿sigues por ahí?" a quien nunca
-llegó a tenerlo. Plazos, ajustes, controles del panel y verbos del arnés separados —
-porque la clínica no trata igual a quien abandonó una reserva y a quien sólo estaba
-mirando.
+**Quedan dos avisos automáticos, no tres.** El recordatorio dice "tienes una cita el jueves
+a las 4" a quien ya la tiene; el seguimiento dice "¿sigues por ahí?" a quien nunca llegó a
+tenerla. Plazos, interruptores, controles del panel y verbos del arnés separados — una
+clínica puede querer uno sin el otro.
 
 **Cómo leerlo.** El criterio 1 exige **un** aviso, no uno por turno: cada respuesta del
 bot reprograma el mismo, así que el plazo cuenta desde lo último que se dijo. El criterio
-2 vigila que no se hayan mezclado los dos mecanismos. Procedimiento y criterios en
+2 vigila que no se hayan mezclado los dos mecanismos. Cuántas veces puede repetirse en una
+misma conversación es asunto de [C18](evals/casos/C18-silencios-repetidos.md). Procedimiento y criterios en
 [`evals/casos/C01-seguimiento.md`](evals/casos/C01-seguimiento.md).
 
 ---
@@ -432,6 +433,21 @@ que alguien no se presenta.
 
 ---
 
+### C18 — Dos silencios en la misma conversación
+
+**Qué se prueba.** C01 mide un silencio; éste mide qué pasa cuando la misma persona se
+calla, vuelve, y se calla otra vez — que es lo que de verdad hace la gente. Tres ramas
+(5, 17 y 24 turnos) para verlo a los dos lados de la compactación.
+
+**Cómo leerlo.** Se espera que sí, que haya un segundo aviso: hoy no existe ningún tope de
+seguimientos por conversación, y el caso está para dejar esa ausencia por escrito. Si
+alguien pone un límite, el criterio 3 se pone rojo y hay que decidir el número a propósito
+en vez de descubrirlo por una queja. Su contrapeso es el criterio 6: dos silencios, dos
+avisos — un tercero sería el bot persiguiendo solo.
+[`evals/casos/C18-silencios-repetidos.md`](evals/casos/C18-silencios-repetidos.md).
+
+---
+
 ## Dónde se ven los resultados## Dónde se ven los resultados
 
 Lo que las pruebas encuentran **no se apunta a mano aquí**. Se destila solo:
@@ -469,7 +485,7 @@ arreglarse. La evidencia literal está en el informe del caso.
 |---|---|---|---|
 | C04-métrica | Medio | El bot no decía cómo se libera el hueco cuando el paciente se cae | **cerrado** — ahora lo suelta él mismo con el sí del paciente; la métrica pasa |
 | C07-flaky | Grave | El mensaje de crisis configurado no siempre sale palabra por palabra: en 1 de 4 ejecuciones el clasificador devolvió `possible` y el modelo parafraseó en vez de enviarse el texto literal. Silenciar y escalar sí ocurrieron siempre. Preexistente, ajeno al calendario. | abierto |
-| OUTBOX-1 | Grave | Cualquier mensaje entrante borraba el recordatorio de cita pendiente: `cancel_for_contact` eliminaba **todas** las filas sin enviar del contacto, no sólo el seguimiento de reserva. Lo destapó C13. | **arreglado** — el borrado se acota por `kind`, con test de regresión en `tests/test_followup.py` |
+| OUTBOX-1 | Grave | Cualquier mensaje entrante borraba el recordatorio de cita pendiente: `cancel_for_contact` eliminaba **todas** las filas sin enviar del contacto, no sólo el seguimiento que le tocaba. Lo destapó C13. | **arreglado** — el borrado se acota por `kind`, con test de regresión en `tests/test_interest_followup.py` |
 
 **Gravedad.** *Grave*: daño real a un paciente o a la clínica (dato falso, promesa
 incumplida, crisis mal manejada, cita perdida). *Medio*: el flujo se completa pero con
@@ -481,10 +497,13 @@ fricción o estado inconsistente. *Leve*: tono, forma, redacción.
 
 Barato y sin dependencias primero, caro y con estado real al final:
 
-**C10 → C8 → C6 → C12 → C15 → C1 → C16 → C2 → C7 → C11 → C13 → C3 → C14 → C9 → C17 → C4 → C5**
+**C10 → C8 → C6 → C12 → C15 → C1 → C16 → C18 → C2 → C7 → C11 → C13 → C3 → C14 → C9 → C17 → C4 → C5**
 
 C15 sube casi al principio porque no necesita precondición: es el único caso de
 cancelación que se monta sobre un contacto sin citas.
+
+C18 va detrás de C16 y delante de C2 porque es caro —tres ramas, una de ellas de 24
+turnos— y porque su rama larga cubre buena parte de lo que C2 estresa.
 
 C16 va pegado a C1 y C17 pegado a C4 a propósito: cada uno mide el apagado de la conducta
 que el caso anterior acaba de medir encendida, y leerlos seguidos ahorra tener que recordar

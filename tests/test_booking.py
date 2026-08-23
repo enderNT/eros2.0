@@ -1,16 +1,17 @@
-"""The Calendly webhook turning a slot link into a real appointment (TASKS T9b)."""
+"""El webhook de Calendly: reservas que no hicimos nosotros."""
 
 from datetime import UTC, datetime
 
 import pytest
 
 from agente.adapters.store.appointments import SqliteAppointmentsRepository
-from agente.adapters.store.booking_tokens import SqliteBookingTokensRepository
+from agente.adapters.store.contacts import SqliteContactsRepository
 from agente.adapters.store.messages import SqliteMessagesRepository
 from agente.adapters.store.mutes import SqliteMutesRepository
 from agente.adapters.store.outbox import SqliteOutboxRepository
 from agente.domain.contacts import ContactKey
 from agente.domain.errors import KapsoError
+from agente.ports.store import Profile
 from agente.services.booking import BookingService, confirmation_text
 from agente.services.reminders import AppointmentReminders
 
@@ -36,9 +37,8 @@ class FakeChannel:
 
 @pytest.fixture()
 def booking(db_conn, contacts, messages):
-    def _make(channel=None, address="", reminders=None, phone_number_id=""):
+    def _make(channel=None, address="", reminders=None, phone_number_id=KEY.phone_number_id):
         return BookingService(
-            tokens=SqliteBookingTokensRepository(db_conn),
             appointments=SqliteAppointmentsRepository(db_conn),
             contacts=contacts,
             messages=messages,
@@ -54,8 +54,30 @@ def booking(db_conn, contacts, messages):
     return _make
 
 
-def _issue(db_conn, token: str = "tok-1") -> None:
-    SqliteBookingTokensRepository(db_conn).issue(token, KEY, SLOT, NOW)
+def _conocido(db_conn) -> None:
+    """La precondición de una reserva atribuible: que ya tengamos perfil suyo.
+
+    Sin token, el único asidero es el teléfono, y el listón es deliberadamente
+    alto: tiene que ser alguien de quien ya sabemos algo. Quien reserve desde la
+    página pública sin haber hablado nunca con nosotros se descarta en silencio,
+    que es justo lo que protege de confirmarle una cita al paciente equivocado.
+    """
+    repo = SqliteContactsRepository(db_conn)
+    repo.ensure_contact(KEY, NOW)
+    repo.save_profile(
+        Profile(
+            key=KEY,
+            name=None,
+            email=None,
+            kind="prospect",
+            timezone=None,
+            appointment_count=0,
+            last_appointment_utc=None,
+            next_appointment_utc=None,
+            handoff_state="bot",
+            updated_at=NOW,
+        )
+    )
 
 
 def _created(token: str = "tok-1", event: str = EVENT) -> dict:
@@ -63,15 +85,14 @@ def _created(token: str = "tok-1", event: str = EVENT) -> dict:
         "event": event,
         "name": "Ana",
         "email": "ana@example.com",
-        "tracking": {"utm_content": token},
-        "questions_and_answers": [{"question": "Número de teléfono", "answer": "55 1234 5678"}],
+        "questions_and_answers": [{"question": "Número de teléfono", "answer": KEY.contact_phone}],
         "scheduled_event": {"start_time": "2026-08-18T17:00:00Z"},
     }
 
 
 @pytest.mark.asyncio
 async def test_created_writes_one_appointment_and_one_message(db_conn, booking, contacts):
-    _issue(db_conn)
+    _conocido(db_conn)
     channel = FakeChannel()
     await booking(channel).handle("invitee.created", _created())
     rows = SqliteAppointmentsRepository(db_conn).for_contact(KEY)
@@ -82,7 +103,7 @@ async def test_created_writes_one_appointment_and_one_message(db_conn, booking, 
 
 @pytest.mark.asyncio
 async def test_created_updates_the_durable_profile(db_conn, booking, contacts):
-    _issue(db_conn)
+    _conocido(db_conn)
     await booking().handle("invitee.created", _created())
     profile = contacts.get_profile(KEY)
     assert profile.next_appointment_utc == SLOT
@@ -93,7 +114,7 @@ async def test_created_updates_the_durable_profile(db_conn, booking, contacts):
 
 @pytest.mark.asyncio
 async def test_the_same_delivery_twice_is_a_no_op(db_conn, booking):
-    _issue(db_conn)
+    _conocido(db_conn)
     channel = FakeChannel()
     service = booking(channel)
     await service.handle("invitee.created", _created())
@@ -113,7 +134,7 @@ async def test_an_unknown_token_is_ignored(db_conn, booking):
 
 @pytest.mark.asyncio
 async def test_a_phone_answer_that_does_not_match_is_not_linked(db_conn, booking):
-    _issue(db_conn)
+    _conocido(db_conn)
     channel = FakeChannel()
     payload = _created()
     payload["questions_and_answers"][0]["answer"] = "+52 55 0000 0000"
@@ -123,16 +144,8 @@ async def test_a_phone_answer_that_does_not_match_is_not_linked(db_conn, booking
 
 
 @pytest.mark.asyncio
-async def test_the_address_is_only_mentioned_when_configured(db_conn, booking):
-    _issue(db_conn)
-    channel = FakeChannel()
-    await booking(channel, address="Av. Reforma 100").handle("invitee.created", _created())
-    assert "Av. Reforma 100" in channel.sent[0][1]
-
-
-@pytest.mark.asyncio
 async def test_canceled_flips_the_status_and_clears_the_profile(db_conn, booking, contacts):
-    _issue(db_conn)
+    _conocido(db_conn)
     channel = FakeChannel()
     service = booking(channel)
     await service.handle("invitee.created", _created())
@@ -145,7 +158,7 @@ async def test_canceled_flips_the_status_and_clears_the_profile(db_conn, booking
 
 @pytest.mark.asyncio
 async def test_a_repeated_cancel_notifies_once(db_conn, booking):
-    _issue(db_conn)
+    _conocido(db_conn)
     channel = FakeChannel()
     service = booking(channel)
     await service.handle("invitee.created", _created())
@@ -156,14 +169,14 @@ async def test_a_repeated_cancel_notifies_once(db_conn, booking):
 
 @pytest.mark.asyncio
 async def test_a_failed_notification_keeps_the_appointment(db_conn, booking):
-    _issue(db_conn)
+    _conocido(db_conn)
     await booking(FakeChannel(fail=True)).handle("invitee.created", _created())
     assert SqliteAppointmentsRepository(db_conn).find(EVENT) is not None
 
 
 @pytest.mark.asyncio
 async def test_confirmed_booking_schedules_and_cancel_removes_its_reminder(db_conn, booking):
-    _issue(db_conn)
+    _conocido(db_conn)
     channel = FakeChannel()
     reminders = AppointmentReminders(
         outbox=SqliteOutboxRepository(db_conn),
@@ -180,6 +193,21 @@ async def test_confirmed_booking_schedules_and_cancel_removes_its_reminder(db_co
     assert SqliteOutboxRepository(db_conn).pending_appointment_reminder(KEY) is not None
     await service.handle("invitee.canceled", {"event": EVENT})
     assert SqliteOutboxRepository(db_conn).pending_appointment_reminder(KEY) is None
+
+
+def test_the_address_is_only_mentioned_when_configured():
+    """OJO: hoy ningún camino de producción llama a `confirmation_text`.
+
+    Lo que el webhook manda es `moved_text`, y lo nuestro se confirma desde
+    `agendar_cita`. Esta prueba dejó de poder pasar por el webhook cuando el
+    agendamiento por enlace desapareció, así que ejerce la función directamente
+    y queda como constancia de que la dirección se sabe formatear — no de que
+    alguien se la esté diciendo al paciente.
+    """
+    assert "Av. Reforma 100" in confirmation_text(
+        SLOT, "America/Mexico_City", NOW, "Av. Reforma 100"
+    )
+    assert "dirección" not in confirmation_text(SLOT, "America/Mexico_City", NOW, "")
 
 
 def test_the_confirmation_never_doubles_a_period():
@@ -203,7 +231,7 @@ def test_the_confirmation_localizes_across_a_dst_transition():
 
 @pytest.mark.asyncio
 async def test_an_unrelated_event_does_nothing(db_conn, booking):
-    _issue(db_conn)
+    _conocido(db_conn)
     channel = FakeChannel()
     await booking(channel).handle("invitee_no_show.created", _created())
     assert channel.sent == []
@@ -218,7 +246,6 @@ def _rescheduled(phone: str) -> dict:
         "event": "https://api.calendly.com/scheduled_events/movido",
         "name": "Paciente",
         "email": "citas@clinica.test",
-        "tracking": {"utm_content": ""},
         "questions_and_answers": [{"question": "Numero de telefono", "answer": phone}],
         "scheduled_event": {"start_time": SLOT.isoformat().replace("+00:00", "Z")},
     }
@@ -227,7 +254,7 @@ def _rescheduled(phone: str) -> dict:
 @pytest.mark.asyncio
 async def test_a_host_reschedule_is_attributed_by_the_phone_we_wrote(booking, contacts, db_conn):
     """We wrote that number into Calendly ourselves, so reading it back is not guessing."""
-    _issue(db_conn)
+    _conocido(db_conn)
     channel = FakeChannel()
     service = booking(channel=channel, phone_number_id=KEY.phone_number_id)
     await service.handle("invitee.created", _created())  # la cita que luego se mueve
@@ -251,7 +278,7 @@ async def test_a_booking_from_an_unknown_number_is_still_discarded(booking, cont
     The bar is a contact with a profile — somebody we have actually booked for.
     Attributing anything else would confirm a stranger's appointment to a patient.
     """
-    _issue(db_conn)
+    _conocido(db_conn)
     service = booking(phone_number_id=KEY.phone_number_id)
     await service.handle("invitee.created", _created())
     await service.handle("invitee.canceled", {"event": EVENT})

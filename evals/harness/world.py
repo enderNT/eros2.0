@@ -8,7 +8,7 @@ con sus migraciones, el outbox, los recordatorios, el seguimiento y el panel.
 Qué está sustituido: sólo Kapso y Calendly (ver `fakes.py`).
 
 Qué está bajo control del test, en vez de del reloj: el disparo de lo que
-vence. `_run_followups` de la app despierta cada `booking_followup_poll_seconds`
+vence. `_run_outbox` de la app despierta cada `outbox_poll_seconds`
 y llama a `send_due()` con la hora real; aquí ese intervalo se pone en una hora
 para que no salte solo, y el test dispara `fire_due(at=...)` con el momento que
 quiera. No es un truco: `send_due(now)` acepta el instante como argumento
@@ -119,7 +119,6 @@ class Snapshot:
     muted: bool
     mute_reason: str | None
     profile: dict[str, Any] | None
-    tokens: tuple[str, ...]
 
     @property
     def scheduled(self) -> tuple[Appointment, ...]:
@@ -130,17 +129,12 @@ class Snapshot:
         return tuple(item for item in self.outbox if item.kind == "appointment_reminder")
 
     @property
-    def followups(self) -> tuple[Pending, ...]:
-        """Seguimientos **de reserva**: los que cuelgan de un horario ya ofrecido."""
-        return tuple(item for item in self.outbox if item.kind == "booking_followup")
-
-    @property
     def seguimientos_interes(self) -> tuple[Pending, ...]:
-        """Seguimientos **de interés**: los de quien nunca llegó a tener un horario.
+        """Seguimientos tras el silencio, separados de los recordatorios.
 
-        Separado de `followups` porque un caso que los sume no está midiendo nada:
-        ver uno u otro dice cosas distintas sobre en qué punto se enfrió la
-        conversación.
+        Un caso que sumara los dos no estaría midiendo nada: uno dice que a
+        alguien se le recordó su cita y el otro que a alguien sin cita se le
+        volvió a escribir.
         """
         return tuple(item for item in self.outbox if item.kind == "interest_followup")
 
@@ -172,16 +166,26 @@ class World:
         """Lo mismo que mover el ajuste global en el panel."""
         self.app.state.runtime_settings.set_appointment_reminder_minutes(minutes, datetime.now(UTC))
 
-    def set_followup_minutes(self, minutes: int) -> None:
-        """El plazo del seguimiento **de reserva**: quien ya tenía un horario."""
-        self.app.state.runtime_settings.set_booking_followup_minutes(minutes, datetime.now(UTC))
+    def hubo_compactacion(self) -> bool:
+        """¿La conversación ya se resumió alguna vez?
+
+        Lo que separa una conversación corta de una larga no es el número de
+        turnos sino si el resumen rodante llegó a entrar. Un caso que quiera
+        medir "y esto sigue funcionando después de compactar" tiene que poder
+        comprobar que compactó de verdad, en vez de suponerlo por la longitud.
+        """
+        row = self.db.execute(
+            "SELECT 1 FROM summary WHERE phone_number_id = ? AND contact_phone = ?",
+            (PHONE_NUMBER_ID, CONTACT),
+        ).fetchone()
+        return row is not None
 
     def set_interest_followup_minutes(self, minutes: int) -> None:
-        """El plazo del seguimiento **de interés**: quien no llegó a agendar.
+        """El plazo del seguimiento tras el silencio: quien no llegó a agendar.
 
-        Es otro ajuste y otro slider en el panel, no el mismo con otro nombre. Un
-        caso que quiera probar uno sin el otro tiene que poder moverlos por
-        separado, que es justo la razón de que estén separados.
+        Su propio slider en el panel, aparte del del recordatorio. Un caso que
+        quiera probar uno sin el otro tiene que poder moverlos por separado, que
+        es justo la razón de que estén separados.
         """
         self.app.state.runtime_settings.set_interest_followup_minutes(minutes, datetime.now(UTC))
 
@@ -245,38 +249,22 @@ class World:
 
     # ----------------------------------------------------------- calendly
 
-    def tokens(self) -> list[tuple[str, datetime]]:
-        rows = self.db.execute(
-            "SELECT token, slot_utc FROM booking_token"
-            " WHERE phone_number_id = ? AND contact_phone = ? ORDER BY created_at DESC",
-            (PHONE_NUMBER_ID, CONTACT),
-        ).fetchall()
-        return [(row["token"], _parse(row["slot_utc"])) for row in rows]
-
     async def book(
         self,
         *,
-        token: str | None = None,
-        slot: datetime | None = None,
+        slot: datetime,
         phone: str = CONTACT,
         name: str = "Paciente De Prueba",
         email: str = "paciente@example.test",
         event_uri: str | None = None,
     ) -> str:
-        """`invitee.created`, tal cual lo manda Calendly cuando el paciente termina.
+        """`invitee.created`: una reserva que no hicimos nosotros.
 
-        El teléfono va en las respuestas del formulario porque el servicio lo
-        exige: el enlace personalizado se puede reenviar, así que el número que
-        recoge Calendly es lo que corrobora de quién es la reserva.
+        La clínica metiendo a alguien a mano, o un cambio de hora hecho desde el
+        lado del anfitrión. El teléfono va en las respuestas del formulario
+        porque es lo único que queda para saber de quién es: sin enlace ya no hay
+        token, y el número tiene que pertenecer a un contacto que ya conocemos.
         """
-        if token is None:
-            issued = self.tokens()
-            if not issued:
-                raise AssertionError("no hay token de reserva: el bot nunca mandó el enlace")
-            token, issued_slot = issued[0]
-            slot = slot or issued_slot
-        if slot is None:
-            raise AssertionError("hace falta el horario de la reserva")
         uri = event_uri or f"https://api.calendly.com/scheduled_events/{uuid.uuid4()}"
         mark = len(self.channel.sent)
         await self._post_calendly(
@@ -286,7 +274,6 @@ class World:
                     "event": uri,
                     "name": name,
                     "email": email,
-                    "tracking": {"utm_content": token},
                     "questions_and_answers": [{"question": "Número de teléfono", "answer": phone}],
                     "scheduled_event": {
                         "start_time": slot.astimezone(UTC).isoformat().replace("+00:00", "Z")
@@ -297,49 +284,6 @@ class World:
         self.calendar.mark_booked(slot)
         self._record_system(mark, "calendly: reserva completada")
         return uri
-
-    async def preparar_cita(self, *, en_minutos: int, max_turnos: int = 6) -> tuple[str, datetime]:
-        """Precondición compartida: dejar una cita confirmada, con todo el flujo.
-
-        No hay atajos: el hueco se ofrece en el calendario, el paciente lo pide, el
-        bot negocia hasta mandar el enlace y sólo entonces se simula la reserva.
-        Insertar la cita en la base saltándose `agendar_cita` probaría el webhook
-        pero no la conversación, que es justo lo que hay que medir.
-
-        Hacen falta varios turnos porque el bot confirma antes de mandar el enlace,
-        y a veces propone otro horario. **La cita se hace sobre el horario del
-        token, no sobre el que se pidió**: si el modelo ofrece otro hueco y el
-        paciente acepta, forzar el horario original crearía una cita que no
-        corresponde a ningún enlace emitido — una inconsistencia inventada por el
-        arnés que luego parecería un bug del sistema.
-
-        Devuelve `(event_uri, horario realmente reservado)`; los casos calculan sus
-        tiempos a partir de ese horario.
-        """
-        objetivo = await self.calendar.elegir_hueco(en_minutos)
-        await self.say(
-            f"hola, quiero agendar la cita de valoración {self.frase_horario(objetivo)},"
-            " ¿me pasas el enlace para reservarla?"
-        )
-        afirmaciones = [
-            "sí, ese horario me sirve, mándame el enlace por favor",
-            "sí, por favor, pásame el enlace de reserva",
-            "sí, adelante, mándamelo",
-        ]
-        for intento in range(max_turnos):
-            if self.tokens():
-                break
-            await self.say(afirmaciones[min(intento, len(afirmaciones) - 1)])
-        emitidos = self.tokens()
-        if not emitidos:
-            raise AssertionError(
-                f"el bot no mandó el enlace de reserva en {max_turnos} turnos:"
-                " no se puede montar la precondición del caso.\n"
-                f"conversación:\n{self.transcript()}"
-            )
-        token, slot = emitidos[0]
-        uri = await self.book(token=token, slot=slot)
-        return uri, slot
 
     def frase_horario(self, slot_utc: datetime) -> str:
         """Cómo pide un paciente un horario concreto: **con las mismas palabras
@@ -359,16 +303,14 @@ class World:
     async def preparar_cita_directa(self, *, en_minutos: int, max_turnos: int = 6) -> Reserva:
         """Precondición de los casos que esperan que el bot reserve él mismo.
 
-        Igual que `preparar_cita`, pero sin dar por hecho el enlace: tras cada
-        turno mira si ya hay cita en la base. Si la hay, la reservó el sistema y
-        eso es lo que estos casos quieren medir.
+        No hay atajo: el hueco se ofrece en el calendario, el paciente lo pide y
+        el bot reserva con `agendar_cita`. Insertar la cita en la base saltándose
+        la herramienta probaría el webhook pero no la conversación, que es justo
+        lo que hay que medir.
 
-        Si el sistema no reserva pero sí emite un token, **no revienta**: cae al
-        flujo de enlace, monta la cita igual y lo marca en `por_el_sistema`. Esa
-        tolerancia es deliberada. Mientras `agendar_cita` siga mandando enlaces,
-        estos casos tienen que poder ejecutarse y medir todo lo demás — qué dice
-        el bot, si duplica citas, si avisa — en vez de morir todos con el mismo
-        error de precondición y no enseñar nada.
+        Tras cada turno mira si ya hay cita en la base. `por_el_sistema` se
+        conserva —siempre `True` hoy— porque los casos lo citan en sus notas para
+        dejar constancia de por qué camino se montó la precondición.
         """
         objetivo = await self.calendar.elegir_hueco(en_minutos)
         await self.say(
@@ -383,24 +325,16 @@ class World:
             reservada = self._cita_vigente()
             if reservada is not None:
                 return Reserva(reservada.event_uri, reservada.slot_utc, True)
-            if self.tokens():
-                break
             await self.say(afirmaciones[min(intento, len(afirmaciones) - 1)])
 
         reservada = self._cita_vigente()
         if reservada is not None:
             return Reserva(reservada.event_uri, reservada.slot_utc, True)
-
-        emitidos = self.tokens()
-        if not emitidos:
-            raise AssertionError(
-                f"el bot ni reservó ni mandó enlace en {max_turnos} turnos:"
-                " no se puede montar la precondición del caso.\n"
-                f"conversación:\n{self.transcript()}"
-            )
-        token, slot = emitidos[0]
-        uri = await self.book(token=token, slot=slot)
-        return Reserva(uri, slot, False)
+        raise AssertionError(
+            f"el bot no reservó en {max_turnos} turnos:"
+            " no se puede montar la precondición del caso.\n"
+            f"conversación:\n{self.transcript()}"
+        )
 
     def _cita_vigente(self) -> Appointment | None:
         vigentes = self.state().scheduled
@@ -495,7 +429,6 @@ class World:
         """Adelantar el reloj **de lo que vence**, sin tocar el reloj del proceso."""
         moment = at or datetime.now(UTC)
         mark = len(self.channel.sent)
-        await self.app.state.booking_followups.send_due(moment)
         await self.app.state.interest_followups.send_due(moment)
         await self.app.state.appointment_reminders.send_due(moment)
         salidas = tuple(item.text for item in self.channel.since(mark))
@@ -561,7 +494,6 @@ class World:
             muted=SqliteMutesRepository(self.db).is_bot_muted(self.key, datetime.now(UTC)),
             mute_reason=_mute_reason(self.db, self.key),
             profile=_profile(profile),
-            tokens=tuple(token for token, _ in self.tokens()),
         )
 
     def transcript(self) -> str:
@@ -659,7 +591,7 @@ async def world(name: str, *, calendario: str | None = None, **overrides: Any):
         # arnés, incluso cuando la disponibilidad viene de Calendly de verdad.
         "calendly_signing_key": CALENDLY_SIGNING_KEY,
         # Que nada venza solo: los vencimientos los dispara el test.
-        "booking_followup_poll_seconds": 3600.0,
+        "outbox_poll_seconds": 3600.0,
         # El seguimiento de interés se arma en cuanto el bot le responde a alguien
         # sin cita, o sea en casi todos los casos. Arrancarlo en el máximo lo deja
         # programado pero fuera del alcance de cualquier `fire_due` razonable, así

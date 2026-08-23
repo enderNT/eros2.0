@@ -23,7 +23,6 @@ from .adapters.calendly.client import CalendlyClient
 from .adapters.kapso.client import KapsoClient
 from .adapters.store import db as store_db
 from .adapters.store.appointments import SqliteAppointmentsRepository
-from .adapters.store.booking_tokens import SqliteBookingTokensRepository
 from .adapters.store.contacts import SqliteContactsRepository
 from .adapters.store.messages import SqliteMessagesRepository
 from .adapters.store.mutes import SqliteMutesRepository
@@ -39,7 +38,6 @@ from .services.agent import Agent, AgentResponder
 from .services.booking import BookingService
 from .services.compaction import compact, make_summarizer
 from .services.crisis import make_classifier
-from .services.followup import BookingFollowups
 from .services.inbound import InboundService
 from .services.interest_followup import InterestFollowups
 from .services.knowledge import Knowledge
@@ -84,7 +82,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         summaries = SqliteSummariesRepository(app.state.db)
         contacts = SqliteContactsRepository(app.state.db)
         appointments = SqliteAppointmentsRepository(app.state.db)
-        app.state.booking_tokens = SqliteBookingTokensRepository(app.state.db)
         outbox = SqliteOutboxRepository(app.state.db)
         runtime_settings = SqliteRuntimeSettingsRepository(app.state.db)
         app.state.runtime_settings = runtime_settings
@@ -134,7 +131,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if app.state.db is not None:
             reminders.reschedule_pending(datetime.now(UTC))
         app.state.booking = BookingService(
-            tokens=app.state.booking_tokens,
             appointments=appointments,
             contacts=contacts,
             messages=messages,
@@ -159,19 +155,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 overlap_turns=cfg.overlap_turns,
             )
 
-        followups = BookingFollowups(
-            outbox=outbox,
-            booking_tokens=app.state.booking_tokens,
-            appointments=appointments,
-            messages=messages,
-            mutes=SqliteMutesRepository(app.state.db),
-            channel=app.state.channel,
-            timezone=cfg.calendly_timezone,
-            delay_minutes=lambda: runtime_settings.booking_followup_minutes(
-                cfg.booking_followup_minutes
-            ),
-        )
-        app.state.booking_followups = followups
         interest = InterestFollowups(
             outbox=outbox,
             appointments=appointments,
@@ -187,16 +170,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         app.state.interest_followups = interest
 
-        # Los dos seguimientos cuelgan del mismo par de ganchos, y cada uno
-        # decide por su cuenta si le toca. Se encadenan aquí, en el cableado, en
-        # vez de dárselos a `InboundService`: el servicio de entrada no tiene por
-        # qué enterarse de cuántas cosas hay que avisar.
+        # El seguimiento cuelga de este par de ganchos. Se encadena aquí, en el
+        # cableado, en vez de dárselo a `InboundService`: el servicio de entrada
+        # no tiene por qué enterarse de qué hay que avisar ni de cuántas cosas.
         def on_inbound(key: ContactKey) -> None:
-            followups.cancel_for_contact(key)
             interest.cancel_for_contact(key)
 
         def on_outbound(key: ContactKey, text: str, sent_at: datetime) -> None:
-            followups.schedule_from_outbound(key, text, sent_at)
             interest.schedule_from_outbound(key, text, sent_at)
 
         app.state.inbound = InboundService(
@@ -212,20 +192,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             on_inbound=on_inbound,
             on_outbound=on_outbound,
         )
-        followup_task = (
-            asyncio.create_task(
-                _run_followups(followups, interest, reminders, cfg.booking_followup_poll_seconds)
-            )
+        outbox_task = (
+            asyncio.create_task(_run_outbox(interest, reminders, cfg.outbox_poll_seconds))
             if app.state.db is not None
             else None
         )
         try:
             yield
         finally:
-            if followup_task is not None:
-                followup_task.cancel()
+            if outbox_task is not None:
+                outbox_task.cancel()
                 with suppress(asyncio.CancelledError):
-                    await followup_task
+                    await outbox_task
             if app.state.db is not None:
                 app.state.db.close()
             await app.state.channel.aclose()
@@ -257,19 +235,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-async def _run_followups(
-    followups: BookingFollowups,
+async def _run_outbox(
     interest: InterestFollowups,
     reminders: AppointmentReminders,
     poll_seconds: float,
 ) -> None:
+    """Un solo bucle para los dos avisos: lo que difiere es cuándo vencen."""
     while True:
         try:
-            await followups.send_due()
             await interest.send_due()
             await reminders.send_due()
         except StoreError:
-            log.error("booking_followup_poll_failed")
+            log.error("outbox_poll_failed")
         await asyncio.sleep(poll_seconds)
 
 

@@ -87,7 +87,7 @@ async def test_la_duda_no_cancela_la_cita() -> None:
                 "Perder el recordatorio delataría una cancelación que no debió ocurrir."
                 " Este criterio destapó además un bug ajeno al caso —`cancel_for_contact`"
                 " borraba TODAS las filas sin enviar en cada mensaje entrante, no sólo el"
-                " seguimiento de reserva—, hoy arreglado acotándolo por tipo."
+                " seguimiento que le tocaba—, hoy arreglado acotándolo por tipo."
             ),
         )
 

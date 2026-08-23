@@ -21,10 +21,8 @@ from ..adapters.store.mutes import SqliteMutesRepository
 from ..adapters.store.purge import SqlitePurgeRepository
 from ..adapters.store.settings import (
     MAX_APPOINTMENT_REMINDER_MINUTES,
-    MAX_BOOKING_FOLLOWUP_MINUTES,
     MAX_INTEREST_FOLLOWUP_MINUTES,
     MIN_APPOINTMENT_REMINDER_MINUTES,
-    MIN_BOOKING_FOLLOWUP_MINUTES,
     MIN_INTEREST_FOLLOWUP_MINUTES,
     SqliteRuntimeSettingsRepository,
 )
@@ -78,12 +76,6 @@ def _mutes(request: Request) -> SqliteMutesRepository:
 
 def _runtime_settings(request: Request) -> SqliteRuntimeSettingsRepository:
     return SqliteRuntimeSettingsRepository(request.app.state.db)
-
-
-def _booking_followup_minutes(request: Request) -> int:
-    return _runtime_settings(request).booking_followup_minutes(
-        request.app.state.settings.booking_followup_minutes
-    )
 
 
 def _interest_followup_minutes(request: Request) -> int:
@@ -187,11 +179,6 @@ async def state(request: Request) -> dict[str, Any]:
         "error": error,
         "global_muted": mutes.global_mute() is not None,
         "number_muted": mutes.number_mute(phone_number_id) is not None,
-        "booking_followup": {
-            "minutes": _booking_followup_minutes(request),
-            "min": MIN_BOOKING_FOLLOWUP_MINUTES,
-            "max": MAX_BOOKING_FOLLOWUP_MINUTES,
-        },
         "interest_followup": {
             "minutes": _interest_followup_minutes(request),
             "min": MIN_INTEREST_FOLLOWUP_MINUTES,
@@ -266,22 +253,9 @@ async def global_mute(request: Request, body: GlobalMuteBody) -> dict[str, Any]:
     return {"global_muted": body.muted}
 
 
-@router.post("/booking-followup", dependencies=[_guard])
-async def booking_followup(request: Request, body: MinutesBody) -> dict[str, Any]:
-    try:
-        _runtime_settings(request).set_booking_followup_minutes(body.minutes, datetime.now(UTC))
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"minutes": body.minutes}
-
-
 @router.post("/interest-followup", dependencies=[_guard])
 async def interest_followup(request: Request, body: MinutesBody) -> dict[str, Any]:
-    """El plazo del seguimiento a quien no llegó a agendar. Aparte del de reserva.
-
-    Son dos ajustes porque son dos decisiones: a quien abandonó una reserva se le
-    escribe antes que a quien sólo estaba preguntando.
-    """
+    """Cuánto silencio se espera antes de retomar a quien no llegó a agendar."""
     try:
         _runtime_settings(request).set_interest_followup_minutes(body.minutes, datetime.now(UTC))
     except ValueError as exc:

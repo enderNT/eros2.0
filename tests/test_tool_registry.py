@@ -3,7 +3,6 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from agente.adapters.store.appointments import SqliteAppointmentsRepository
-from agente.adapters.store.booking_tokens import SqliteBookingTokensRepository
 from agente.adapters.store.contacts import SqliteContactsRepository
 from agente.adapters.store.messages import SqliteMessagesRepository
 from agente.adapters.store.outbox import SqliteOutboxRepository
@@ -61,7 +60,6 @@ def tools(db_conn, mutes):
             mutes=mutes,
             calendar=calendar or FakeCalendar(),
             booking=BookingService(
-                tokens=SqliteBookingTokensRepository(db_conn),
                 appointments=SqliteAppointmentsRepository(db_conn),
                 contacts=SqliteContactsRepository(db_conn),
                 messages=SqliteMessagesRepository(db_conn),

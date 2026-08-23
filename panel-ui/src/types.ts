@@ -20,21 +20,17 @@ export interface Contact {
   appointment: Appointment | null;
 }
 
+/**
+ * Un aviso automático: cuánto se espera, y si se manda siquiera.
+ *
+ * Son dos, y son los dos que el bot manda por iniciativa propia: el seguimiento
+ * tras el silencio y el recordatorio previo a la cita. Cada uno con su plazo y
+ * su interruptor, porque una clínica puede querer uno sin el otro.
+ */
 export interface MinuteSetting {
   minutes: number;
   min: number;
   max: number;
-}
-
-/**
- * Un ajuste de plazo que además se puede apagar entero.
- *
- * No todos lo son: el seguimiento de reserva sigue siendo sólo un plazo. Los dos
- * que sí — el seguimiento tras el silencio y el recordatorio previo a la cita —
- * son los que el bot manda por iniciativa propia, y son justo los que una
- * clínica puede querer que no salgan nunca.
- */
-export interface ToggleableMinuteSetting extends MinuteSetting {
   enabled: boolean;
 }
 
@@ -43,9 +39,8 @@ export interface PanelState {
   error: string | null;
   global_muted: boolean;
   number_muted: boolean;
-  booking_followup: MinuteSetting;
-  interest_followup: ToggleableMinuteSetting;
-  appointment_reminder: ToggleableMinuteSetting;
+  interest_followup: MinuteSetting;
+  appointment_reminder: MinuteSetting;
   contacts: Contact[];
 }
 

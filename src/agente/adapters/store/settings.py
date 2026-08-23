@@ -8,12 +8,9 @@ from datetime import datetime
 from ...domain.errors import StoreError
 from .db import to_utc_iso
 
-MIN_BOOKING_FOLLOWUP_MINUTES = 0
-MAX_BOOKING_FOLLOWUP_MINUTES = 90
-# El seguimiento de interés no admite 0: a diferencia del de reserva, aquí
-# "ahora mismo" significaría escribir otra vez en el mismo instante en que se
-# acaba de contestar. Un minuto es el mínimo con sentido, y el que permite
-# probarlo de punta a punta sin esperar una hora.
+# Cero no vale: "ahora mismo" significaría escribirle otra vez en el mismo
+# instante en que se le acaba de contestar. Un minuto es el mínimo con sentido,
+# y el que permite probarlo de punta a punta sin esperar una hora.
 MIN_INTEREST_FOLLOWUP_MINUTES = 1
 MAX_INTEREST_FOLLOWUP_MINUTES = 90
 MIN_APPOINTMENT_REMINDER_MINUTES = 1
@@ -23,30 +20,6 @@ MAX_APPOINTMENT_REMINDER_MINUTES = 10_080  # seven days
 class SqliteRuntimeSettingsRepository:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
-
-    def booking_followup_minutes(self, default: int) -> int:
-        try:
-            row = self._conn.execute(
-                "SELECT booking_followup_minutes FROM app_setting WHERE id = 1"
-            ).fetchone()
-        except sqlite3.Error as exc:
-            raise StoreError(str(exc)) from exc
-        return int(row["booking_followup_minutes"]) if row else default
-
-    def set_booking_followup_minutes(self, minutes: int, now: datetime) -> None:
-        if not MIN_BOOKING_FOLLOWUP_MINUTES <= minutes <= MAX_BOOKING_FOLLOWUP_MINUTES:
-            raise ValueError("booking follow-up minutes must be between 0 and 90")
-        try:
-            with self._conn:
-                self._conn.execute(
-                    "INSERT INTO app_setting (id, booking_followup_minutes, updated_at)"
-                    " VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET"
-                    " booking_followup_minutes = excluded.booking_followup_minutes,"
-                    " updated_at = excluded.updated_at",
-                    (minutes, to_utc_iso(now)),
-                )
-        except sqlite3.Error as exc:
-            raise StoreError(str(exc)) from exc
 
     def interest_followup_minutes(self, default: int) -> int:
         try:
@@ -63,9 +36,8 @@ class SqliteRuntimeSettingsRepository:
         try:
             with self._conn:
                 self._conn.execute(
-                    "INSERT INTO app_setting (id, booking_followup_minutes,"
-                    " interest_followup_minutes, updated_at) VALUES (1, 90, ?, ?)"
-                    " ON CONFLICT(id) DO UPDATE SET"
+                    "INSERT INTO app_setting (id, interest_followup_minutes, updated_at)"
+                    " VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET"
                     " interest_followup_minutes = excluded.interest_followup_minutes,"
                     " updated_at = excluded.updated_at",
                     (minutes, to_utc_iso(now)),
@@ -100,9 +72,8 @@ class SqliteRuntimeSettingsRepository:
         try:
             with self._conn:
                 self._conn.execute(
-                    "INSERT INTO app_setting (id, booking_followup_minutes,"
-                    " appointment_reminder_minutes, updated_at) VALUES (1, 90, ?, ?)"
-                    " ON CONFLICT(id) DO UPDATE SET"
+                    "INSERT INTO app_setting (id, appointment_reminder_minutes, updated_at)"
+                    " VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET"
                     " appointment_reminder_minutes = excluded.appointment_reminder_minutes,"
                     " updated_at = excluded.updated_at",
                     (minutes, to_utc_iso(now)),
@@ -129,8 +100,8 @@ class SqliteRuntimeSettingsRepository:
         try:
             with self._conn:
                 self._conn.execute(
-                    f"INSERT INTO app_setting (id, booking_followup_minutes, {column},"  # noqa: S608
-                    " updated_at) VALUES (1, 90, ?, ?) ON CONFLICT(id) DO UPDATE SET"
+                    f"INSERT INTO app_setting (id, {column}, updated_at)"  # noqa: S608
+                    " VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET"
                     f" {column} = excluded.{column}, updated_at = excluded.updated_at",
                     (int(enabled), to_utc_iso(now)),
                 )

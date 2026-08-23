@@ -11,7 +11,6 @@ import type {
 } from "../types";
 import { useConfirm } from "../useConfirm";
 import { AppointmentReminderSettings } from "./AppointmentReminderSettings";
-import { BookingFollowupControl } from "./BookingFollowupControl";
 import { InterestFollowupControl } from "./InterestFollowupControl";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ContactList } from "./ContactList";
@@ -75,19 +74,6 @@ export function Panel() {
         <GlobalKillSwitch
           muted={state.global_muted}
           onSave={(muted) => saveGlobal("/global", { muted }, { global_muted: muted })}
-        />
-      </div>
-
-      <div id="booking-followup">
-        <BookingFollowupControl
-          setting={state.booking_followup}
-          onSave={(minutes) =>
-            saveGlobal(
-              "/booking-followup",
-              { minutes },
-              { booking_followup: { ...state.booking_followup, minutes } },
-            )
-          }
         />
       </div>
 

@@ -6,12 +6,11 @@ Este caso llevaba desde el principio documentando un hueco: quien preguntaba el
 precio y se callaba no recibía nunca nada, porque el único seguimiento que
 existía colgaba de un enlace de reserva que esa persona jamás llegó a recibir.
 
-Ahora existe `InterestFollowups`, que es otro seguimiento — otro momento, otro
-motivo, otro ajuste y otro botón en el panel — y el caso pasa a exigirlo.
+Ahora existe `InterestFollowups` y el caso pasa a exigirlo.
 
 Lo que se mide no es sólo que llegue un mensaje: es que llegue **uno**, que sea
-del tipo correcto, y que no se haya colado por el camino del seguimiento de
-reserva, que aquí no tiene nada que hacer.
+del tipo correcto, y que no se haya colado por el camino del recordatorio de
+cita, que aquí no tiene nada que hacer.
 """
 
 from __future__ import annotations
@@ -50,12 +49,12 @@ async def test_interes_que_se_enfria() -> None:
         )
         reporte.criterio(
             2,
-            "No se programó ningún seguimiento de reserva",
-            len(programado.followups) == 0,
+            "No se programó ningún recordatorio de cita",
+            len(programado.reminders) == 0,
             esperado=True,
             nota=(
-                "Son dos mecanismos distintos. Aquí nunca hubo horario ofrecido, así que"
-                " el de reserva no tiene de qué colgar; si aparece, se están mezclando."
+                "Los dos avisos comparten el outbox y nada más. Aquí no hay cita, así"
+                " que un recordatorio significaría que se están mezclando."
             ),
         )
 

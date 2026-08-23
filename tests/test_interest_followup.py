@@ -1,9 +1,9 @@
-"""The second follow-up: the one for interest that cooled before booking.
+"""El seguimiento tras el silencio: quien preguntó y se enfrió antes de agendar.
 
-It shares the outbox with the booking follow-up and the appointment reminder,
-and shares nothing else. Most of what is worth pinning here is exactly that
-separation — that cancelling one leaves the others alone, that neither of them
-answers for the other, and that the delay comes from its own setting.
+Comparte el outbox con el recordatorio de cita y no comparte nada más. Buena
+parte de lo que se fija aquí es exactamente esa separación: que cancelar uno deje
+al otro en pie, que ninguno responda por el otro, y que el plazo salga de su
+propio ajuste.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -11,7 +11,6 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from agente.adapters.store.appointments import SqliteAppointmentsRepository
-from agente.adapters.store.booking_tokens import SqliteBookingTokensRepository
 from agente.adapters.store.contacts import SqliteContactsRepository
 from agente.adapters.store.messages import SqliteMessagesRepository
 from agente.adapters.store.mutes import SqliteMutesRepository
@@ -113,11 +112,14 @@ def test_the_patient_writing_back_cancels_it(make):
     assert _pending(outbox) is None
 
 
-def test_cancelling_leaves_the_booking_follow_up_and_the_reminder_alone(make, db_conn):
-    """Three kinds share the table; each one only ever cancels its own."""
+def test_cancelling_leaves_the_reminder_alone(make, db_conn):
+    """Los dos tipos comparten tabla; cada uno cancela sólo lo suyo.
+
+    Es la regresión de OUTBOX-1: cancelar sin acotar por tipo se llevaba el
+    recordatorio, así que a quien escribía un solo mensaje después de agendar no
+    se le recordaba nunca.
+    """
     outbox = SqliteOutboxRepository(db_conn)
-    SqliteBookingTokensRepository(db_conn).issue("tok-1", KEY, SLOT, NOW)
-    outbox.schedule_booking_followup(KEY, "tok-1", SLOT, "¿pudiste agendar?", NOW)
     outbox.schedule_appointment_reminder(KEY, "event-1", SLOT, "recordatorio", SLOT)
     service, _ = make()
     service.schedule_from_outbound(KEY, "texto", NOW)
@@ -126,7 +128,6 @@ def test_cancelling_leaves_the_booking_follow_up_and_the_reminder_alone(make, db
 
     assert _pending(outbox) is None
     assert outbox.pending_appointment_reminder(KEY) is not None
-    assert outbox.due(SLOT + timedelta(days=1), kind="booking_followup")
 
 
 # --- enviar -------------------------------------------------------------------
